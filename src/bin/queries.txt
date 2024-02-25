@@ -15,11 +15,12 @@ WHERE num_items > 10 AND num_items < 25
 LIMIT 10;
 
 
-	SELECT    o.user_id, op.order_id, op.product_id, p.product_name
+	SELECT    op.order_id, op.product_id, p.product_name
 	  FROM    'datasets/instacart/products.parquet' p
 	  JOIN    'datasets/instacart/order_products.parquet' op
 	    ON    p.product_id = op.product_id
 	  JOIN    'datasets/instacart/orders.parquet' o
 	    ON    o.order_id = op.order_id
 	 WHERE    p.aisle_id IN (27, 28, 62, 124, 134)
-	   AND    o.user_id = 40058;
+	   AND    o.user_id = 40058
+  ORDER BY   o.user_id, op.order_id;

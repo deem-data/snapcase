@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Snapcase Demo</title>
+    <script src="products.js"></script>
+    <script src="aisles.js"></script>
+    <script src="https://code.jquery.com/jquery-2.2.4.min.js" integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44=" crossorigin="anonymous"></script>
+    <script>
+        var socket = new WebSocket("ws://localhost:8080/ws");
+
+        const SENSITIVE_AISLES = [27, 28, 62, 124, 134];
+
+        function isSensitive(itemId) {
+            return SENSITIVE_AISLES.includes(AISLES[itemId]);
+        }
+
+        socket.onmessage = function (event) {
+            var messages = document.getElementById("messages");
+            messages.innerHTML = event.data + "\n" + messages.innerHTML;
+
+            var response = JSON.parse(event.data);
+
+            if (response["response_type"] == "purchases") {
+                var currentBasket = -1;
+                basketItems = "<ul><li>";
+                for (index in response["payload"]["items_by_basket"]) {
+                    var basket = response["payload"]["items_by_basket"][index][0];
+                    var itemId = response["payload"]["items_by_basket"][index][1]
+                    var itemName = PRODUCTS[itemId];
+                    if (isSensitive(itemId)) {
+                        itemName = '<span style="color:red;">' + itemName + '</span>';
+                    }
+                    basketItems += itemName + ", ";
+                    if (basket != currentBasket) {
+                        if (currentBasket != -1) {
+                            basketItems += "</li><li>";
+                        }
+                        currentBasket = basket;
+                    }
+                }
+                basketItems += "</li></ul>";
+                document.getElementById("baskets").innerHTML = basketItems;
+            }
+
+            if (response["response_type"] == "neighbors") {
+                var neighbors = [];
+                for (index in response["payload"]) {
+                    var neighborId = response["payload"][index][0];
+                    var similarity = response["payload"][index][1];
+                    neighbors.push([neighborId, similarity])
+                }
+                const html = neighbors
+                    .sort((a, b) => -(a[1] - b[1]))
+                    .map(e => {
+                        return '<a href="javascript:userFocus(' + e[0] + ');">' + e[0] + "</a> (" + e[1].toFixed(3) +")"
+                    })
+                    .join(", ");
+                document.getElementById("neighbors").innerHTML = html;
+            }
+
+            if (response["response_type"] == "recommendations") {
+                const html = response["payload"]
+                    .map(e => {
+                        var itemId = e[0];
+                        var itemName = PRODUCTS[itemId];
+                        if (isSensitive(itemId)) {
+                            itemName = '<span style="color:red;">' + itemName + '</span>';
+                        }
+                        return itemName + " (" + e[1].toFixed(3) + ")"
+                    })
+                    .join(", ");
+                document.getElementById("recommendations").innerHTML = html;
+            }
+
+            if (response["response_type"] == "embedding") {
+                const html = response["payload"]["weights_per_item"]
+                    .map(e => {
+                        var itemId = e[0];
+                        var itemName = PRODUCTS[itemId];
+                        if (isSensitive(itemId)) {
+                            itemName = '<span style="color:red;">' + itemName + '</span>';
+                        }
+                        return itemName + " (" + e[1].toFixed(3) + ")"
+                    })
+                    .join(", ");
+                document.getElementById("embedding").innerHTML = html;
+            }
+        }
+
+        function userFocus(userId) {
+            var request = {};
+            request["user_id"] = userId;
+            socket.send(JSON.stringify(request));
+        }
+    </script>
+</head>
+<body>
+<p>
+<h2>Instacart Dataset</h2>
+206,210 users, 49,689 items, 33,819,106 purchases<br/>
+Sample users: <a href="javascript:userFocus(93210);">93210</a>, <a href="javascript:userFocus(40058);">40058</a>, <a href="javascript:userFocus(66492);">66492</a>
+</p>
+<h3>Relational Database</h3>
+<div style="padding: 5px; border: 1px solid black; width: 1200px;">
+    <b>Purchases</b>
+    <div id="baskets"></div>
+</div>
+<h3>Recommendation Model (Materialised View)</h3>
+<div style="padding: 5px; border: 1px solid black; width: 1200px;">
+    <b>Recommendations</b>
+    <div id="recommendations"></div>
+    <br/>
+    <b>Sparse Embedding</b>
+    <div id="embedding"></div>
+    <br/>
+    <b>Neighbors</b>
+    <div id="neighbors"></div>
+
+</div>
+<p>
+    <textarea id="messages" rows="5" cols="120">
+    </textarea>
+</p>
+</body>
+</html>

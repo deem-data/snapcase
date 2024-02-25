@@ -364,6 +364,189 @@ impl SparseTopKIndex {
         eprintln!("CABOOSE: inspected: {:?}, updated {:?}, recomputed {:?}",
                   count_nochange, count_update, count_recompute);
     }
+
+
+    pub fn forget_multiple(&mut self, row: usize, columns: &[usize]) {
+        SparseTopKIndex::configure_rayon(false);
+
+        let similarity = COSINE;
+        let (num_rows, _) = self.representations.shape();
+        for column in columns {
+            let old_value = self.representations.get(row, *column);
+
+            assert!(
+                old_value.is_some(),
+                "Cannot forget non-existing value of row {} and column {}!",
+                row,
+                column);
+
+            let old_value = old_value.unwrap().clone();
+
+            zero_out_entry(&mut self.representations, row, *column);
+            zero_out_entry(&mut self.representations_transposed, *column, row);
+
+            self.norms[row] = similarity.update_norm(self.norms[row], old_value);
+        }
+
+        let data = self.representations.data();
+        let indices = self.representations.indices();
+        let indptr_sprs = self.representations.indptr();
+        let data_t = self.representations_transposed.data();
+        let indices_t = self.representations_transposed.indices();
+        let indptr_t_sprs = self.representations_transposed.indptr();
+
+        let start_time = Instant::now();
+
+        let ptr_indices: Vec<_> = indptr_sprs.outer_inds_sz(row).collect();
+        let num_cores = get_physical();
+        let chunk_size = std::cmp::max(1, ptr_indices.len() / num_cores);
+
+        let accs: Vec<_> = ptr_indices.par_chunks(chunk_size).map(|ptr_range| {
+
+            let indptr_t = indptr_t_sprs.raw_storage();
+
+            let mut accumulator = RowAccumulator::new(num_rows.clone());
+
+            for ptr in ptr_range {
+                let value = unsafe { *data.get_unchecked(*ptr) };
+                let other_ptr_start = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(*ptr)) };
+                let other_ptr_end = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(*ptr) + 1) };
+
+                for other_row in other_ptr_start..other_ptr_end {
+                    let index = unsafe { *indices_t.get_unchecked(other_row) };
+                    let value_t = unsafe { *data_t.get_unchecked(other_row) };
+                    accumulator.add_to(index, value_t * value);
+                }
+            }
+
+            accumulator
+        }).collect();
+
+        let mut all_directly_affected_rows: Vec<usize> = Vec::new();
+        columns.iter()
+            .for_each(|column| {
+                indptr_t_sprs.outer_inds_sz(*column)
+                    .for_each(|i| all_directly_affected_rows.push(indices_t[i]));
+            });
+
+        let (updated_similarities, topk) = RowAccumulator::merge_and_collect_all(
+            row,
+            &similarity,
+            self.k,
+            &self.norms,
+            accs,
+            all_directly_affected_rows);
+
+        let parallel_similarity_duration = (Instant::now() - start_time).as_millis();
+
+        let start_time = Instant::now();
+        let mut rows_to_fully_recompute = Vec::new();
+
+        let changes: Vec<(RowIndex, TopkUpdate)> = updated_similarities.par_iter().map(|similar| {
+
+            assert_ne!(similar.row, row as RowIndex);
+
+            let other_row = similar.row;
+            let similarity = similar.similarity;
+
+            let other_topk = &self.topk_per_row[other_row as usize];
+            let already_in_topk = other_topk.contains(row as RowIndex);
+
+            let update = SimilarRow::new(row as RowIndex, similarity);
+
+            let change = if !already_in_topk {
+                if similarity != 0.0 {
+                    assert_eq!(other_topk.len(), self.k,
+                               "Invariant violated: row {} (with updated similarity {}) not in \
+                               topk of row {}, but topk have length of {} instead of k={} only",
+                               row, similarity, other_row, other_topk.len(), self.k);
+                    other_topk.offer_non_existing_entry(update)
+                } else {
+                    NoChange
+                }
+            } else {
+                if other_topk.len() < self.k {
+                    if update.similarity == 0.0 {
+                        other_topk.remove_existing_entry(update.row, self.k)
+                    } else {
+                        other_topk.update_existing_entry(update, self.k)
+                    }
+                } else {
+                    if update.similarity == 0.0 {
+                        NeedsFullRecomputation
+                    } else {
+                        other_topk.update_existing_entry(update, self.k)
+                    }
+                }
+            };
+            (other_row, change)
+        }).collect();
+
+        let change_duration = (Instant::now() - start_time).as_millis();
+
+        let start_time = Instant::now();
+        let mut count_nochange = 0;
+        let mut count_update = 0;
+        let mut count_recompute = 0;
+        for (other_row, change) in changes {
+            match change {
+                NeedsFullRecomputation => {
+                    rows_to_fully_recompute.push(other_row);
+                    count_recompute += 1;
+                },
+                Update(new_topk) => {
+                    count_update += 1;
+                    self.topk_per_row[other_row as usize] = new_topk;
+                },
+                NoChange => {
+                    count_nochange += 1;
+                }
+            }
+        }
+
+        self.topk_per_row[row] = topk;
+        let change_apply_duration = (Instant::now() - start_time).as_millis();
+
+        let indptr = indptr_sprs.raw_storage();
+        let indptr_t = indptr_t_sprs.raw_storage();
+
+        let mut accumulator = RowAccumulator::new(num_rows.clone());
+        let start_time = Instant::now();
+        // TODO is it worth to parallelize this?
+        for row_to_recompute in rows_to_fully_recompute {
+
+            let row_index = row_to_recompute as usize;
+
+            let ptr_start = unsafe { *indptr.get_unchecked(row_index) };
+            let ptr_end = unsafe { *indptr.get_unchecked(row_index + 1) };
+
+            for ptr in ptr_start..ptr_end {
+                let value = unsafe { data.get_unchecked(ptr) };
+
+                let other_ptr_start = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(ptr)) };
+                let other_ptr_end = unsafe { *indptr_t.get_unchecked(*indices.get_unchecked(ptr) + 1) };
+
+                for other_ptr in other_ptr_start..other_ptr_end {
+                    let index = unsafe { *indices_t.get_unchecked(other_ptr) };
+                    let value_t = unsafe { *data_t.get_unchecked(other_ptr) };
+                    accumulator.add_to(index, value_t * value);
+                }
+            }
+
+            let topk = accumulator.topk_and_clear(row_index, self.k, &similarity, &self.norms);
+
+            self.topk_per_row[row_index] = topk;
+        }
+        let recompute_duration = (Instant::now() - start_time).as_millis();
+
+        let _changes = [count_nochange + count_update + count_recompute,
+            count_nochange, count_update, count_recompute];
+        let _durations = [parallel_similarity_duration, change_duration, change_apply_duration,
+            recompute_duration];
+
+        eprintln!("CABOOSE: inspected: {:?}, updated {:?}, recomputed {:?}",
+                  count_nochange, count_update, count_recompute);
+    }
 }
 
 #[cfg(test)]

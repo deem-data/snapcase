@@ -72,7 +72,7 @@ impl SparseItemVector {
     }
 }
 
-const DISCRETISATION_FACTOR: f64 = 1_000_000_000_000_000.0;
+pub const DISCRETISATION_FACTOR: f64 = 1_000_000_000_000_000.0;
 
 #[derive(Eq,PartialEq,Debug,Abomonation,Clone,Hash,Ord,PartialOrd)]
 pub struct DiscretisedItemVector {

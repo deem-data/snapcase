@@ -1,3 +1,6 @@
+pub mod database;
+
+
 use duckdb::Connection;
 use duckdb::Row;
 

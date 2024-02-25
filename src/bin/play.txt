@@ -1,0 +1,314 @@
+
+extern crate timely;
+extern crate differential_dataflow;
+
+
+use std::time::Instant;
+use std::collections::HashMap;
+use differential_dataflow::input::InputSession;
+use differential_dataflow::trace::{Cursor, TraceReader};
+use itertools::Itertools;
+
+use timely::dataflow::operators::Probe;
+use timely::dataflow::operators::probe::Handle;
+//use timely::progress::frontier::AntichainRef;
+
+use sprs::{SpIndex, TriMat};
+use snapcase::caboose::sparse_topk_index::SparseTopKIndex;
+use snapcase::demo::from_query;
+
+use snapcase::tifuknn::types::{Basket, DISCRETISATION_FACTOR, DiscretisedItemVector, HyperParams};
+use snapcase::tifuknn::hyperparams::PARAMS_INSTACART;
+use snapcase::tifuknn::dataflow::{tifu_model, user_vectors};
+use snapcase::tifuknn::types::Trace;
+
+type UserId = usize;
+
+/*
+#5,marinades meat preparation
+#95,canned meat seafood
+#96,lunch meat
+#15,packaged seafood
+#33,kosher foods
+#34,frozen meat seafood
+#35,poultry counter
+#49,packaged poultry
+#106,hot dogs bacon sausage
+#122,meat counter
+
+#27,beers coolers
+#28,red wines
+#62,white wines
+#124,spirits
+#134,specialty wines champagnes
+
+
+baby_aisles = [82, 92, 102, 56]
+meat_aisles = [5, 15, 33, 34, 35, 49, 95, 96, 106, 122]
+alcohol_aisles = [27, 28, 62, 124, 134]
+*/
+
+fn main() {
+
+    let _ = timely::execute_from_args(std::env::args(), move |worker| {
+
+        let mut baskets_input = InputSession::new();
+        let mut basket_items_input = InputSession::new();
+
+        baskets_input.advance_to(0);
+        basket_items_input.advance_to(0);
+
+        let mut user_embeddings_probe = Handle::new();
+        let mut items_by_user_probe = Handle::new();
+
+        let (mut user_embeddings_trace, mut items_by_user_trace) =
+            worker.dataflow(|scope| {
+
+            let baskets = baskets_input.to_collection(scope);
+            let basket_items = basket_items_input.to_collection(scope);
+
+            let (arranged_user_embeddings, arranged_items_by_user) =
+                tifu_model(&baskets, &basket_items, PARAMS_INSTACART);
+
+            arranged_user_embeddings.stream.probe_with(&mut user_embeddings_probe);
+            arranged_items_by_user.stream.probe_with(&mut items_by_user_probe);
+
+            (arranged_user_embeddings.trace, arranged_items_by_user.trace)
+        });
+
+
+
+        from_query(
+           "SELECT order_id, user_id FROM 'datasets/instacart/orders.parquet';",
+           |row| baskets_input.insert((row.get(0).unwrap(), row.get(1).unwrap()))
+        );
+
+        from_query(
+            "SELECT order_id, product_id FROM 'datasets/instacart/order_products.parquet';",
+            |row| basket_items_input.insert((row.get(0).unwrap(), row.get(1).unwrap()))
+        );
+
+        let mut user_embeddings = HashMap::new();
+
+        baskets_input.advance_to(1);
+        basket_items_input.advance_to(1);
+        baskets_input.flush();
+        basket_items_input.flush();
+
+        eprintln!("Initial execution");
+        worker.step_while(||
+            user_embeddings_probe.less_than(baskets_input.time())
+            || user_embeddings_probe.less_than(basket_items_input.time())
+            || items_by_user_probe.less_than(baskets_input.time())
+            || items_by_user_probe.less_than(basket_items_input.time())
+        );
+
+        let num_changed = update_user_embeddings(1, &mut user_embeddings_trace,
+                                                 &mut user_embeddings);
+        eprintln!("{:?} embeddings changed when moving to time 1", num_changed);
+
+        let num_users = 206210;
+        let num_items = 49689;
+        let mut interactions = TriMat::new((num_users, num_items));
+
+        let (mut cursor, storage) = items_by_user_trace.cursor();
+        while cursor.key_valid(&storage) {
+            let user = cursor.key(&storage);
+            while cursor.val_valid(&storage) {
+                let item = cursor.val(&storage);
+                interactions.add_triplet(*user, *item, 1.0);
+                cursor.step_val(&storage);
+            }
+            cursor.step_key(&storage);
+        }
+
+        //let mut topk_index = SparseTopKIndex::new(interactions.to_csr(), 50);
+        //snapcase::caboose::serialize::serialize_to_file(topk_index, "__instacart-index.bin");
+        let mut topk_index = snapcase::caboose::serialize::deserialize_from(num_users, num_items,
+                                                                            "__instacart-index.bin");
+        let alpha = 0.9;
+        let mut increasing_time = 2;
+        for alcohol_user_id in [40058, 66492, 93210] {
+
+            eprintln!("Purchased baskets before unlearning:");
+            from_query(&format!(r#"
+                SELECT    op.order_id, op.product_id, p.product_name
+                  FROM    'datasets/instacart/products.parquet' p
+                  JOIN    'datasets/instacart/order_products.parquet' op
+                    ON    p.product_id = op.product_id
+                  JOIN    'datasets/instacart/orders.parquet' o
+                    ON    o.order_id = op.order_id
+                 WHERE    o.user_id = {}
+              ORDER BY    op.order_id;
+                "#, alcohol_user_id),
+                |row| {
+                    let basket_id: usize = row.get(0).unwrap();
+                    let item_id: usize = row.get(1).unwrap();
+                    let name: String = row.get(2).unwrap();
+                    eprintln!("\t{basket_id} {item_id} {name}");
+                }
+            );
+
+
+            eprintln!("Recommendations before unlearning:");
+            find_recommendations_for(&alcohol_user_id, &user_embeddings, &topk_index, alpha, num_items);
+
+            from_query(&format!(r#"
+                SELECT    op.order_id, op.product_id
+                  FROM    'datasets/instacart/products.parquet' p
+                  JOIN    'datasets/instacart/order_products.parquet' op
+                    ON    p.product_id = op.product_id
+                  JOIN    'datasets/instacart/orders.parquet' o
+                    ON    o.order_id = op.order_id
+                 WHERE    p.aisle_id IN (27, 28, 62, 124, 134)
+                   AND    o.user_id = {};
+                "#, alcohol_user_id),
+                |row| basket_items_input.remove((row.get(0).unwrap(), row.get(1).unwrap()))
+            );
+
+            eprintln!("Removing alcolhol items of user {alcohol_user_id}");
+            let start = Instant::now();
+
+            baskets_input.advance_to(increasing_time);
+            basket_items_input.advance_to(increasing_time);
+            baskets_input.flush();
+            basket_items_input.flush();
+
+            worker.step_while(||
+                user_embeddings_probe.less_than(baskets_input.time())
+                    || user_embeddings_probe.less_than(basket_items_input.time())
+                    || items_by_user_probe.less_than(baskets_input.time())
+                    || items_by_user_probe.less_than(basket_items_input.time())
+            );
+            let dd_duration = start.elapsed();
+            eprintln!("DD update took {:?} ms", dd_duration.as_millis());
+
+            let num_changed = update_user_embeddings(increasing_time, &mut user_embeddings_trace,
+                                                     &mut user_embeddings);
+            update_topk_index(increasing_time, &mut items_by_user_trace, &mut topk_index);
+
+            let duration = start.elapsed();
+            eprintln!("{:?} embeddings changed when moving to time {}",
+                      num_changed, increasing_time);
+            eprintln!("{:?}", user_embeddings.get(&alcohol_user_id).unwrap());
+            eprintln!("Total update took {:?} ms", duration.as_millis());
+            eprintln!("Recommendations after unlearning:");
+            find_recommendations_for(&alcohol_user_id, &user_embeddings, &topk_index, alpha, num_items);
+            eprintln!("\n\n");
+
+            increasing_time += 1;
+        }
+    });
+}
+
+fn find_recommendations_for(
+    user_id: &UserId,
+    user_embeddings: &HashMap<UserId, DiscretisedItemVector>,
+    index: &SparseTopKIndex,
+    alpha: f64,
+    num_items: usize) {
+
+    let mut item_weights = vec![0.0; num_items];
+    for similar_user in index.neighbors(*user_id) {
+        let neighbor_id = similar_user.row.index();
+        let neighbor_embedding = user_embeddings.get(&neighbor_id).unwrap();
+        // TODO move to type
+        for (index, value) in neighbor_embedding.indices.iter().zip(neighbor_embedding.data.iter()) {
+            item_weights[*index] +=
+                (1.0 - alpha)
+                    * similar_user.similarity as f64
+                    * (*value as f64 / DISCRETISATION_FACTOR);
+        }
+    }
+
+    let user_embedding = user_embeddings.get(user_id).unwrap();
+    // TODO move to type
+    for (index, value) in user_embedding.indices.iter().zip(user_embedding.data.iter()) {
+        item_weights[*index] +=
+            alpha * (*value as f64 / DISCRETISATION_FACTOR);
+    }
+
+    let recommended_items: Vec<_> = item_weights.into_iter().enumerate()
+        .filter(|(_index, value)| *value > 0.0)
+        .sorted_by_key(|(_index, value)| (-1.0 * *value * DISCRETISATION_FACTOR) as isize)
+        .take(10)
+        .collect();
+
+    let ids = recommended_items.iter().map(|(index, _value)| index.to_string()).join(", ");
+
+    let mut items_by_name = HashMap::new();
+    from_query(
+        &format!("SELECT product_id, product_name FROM 'datasets/instacart/products.parquet' WHERE product_id IN ({})", ids),
+        |row| {
+            let item_id: usize = row.get(0).unwrap();
+            let name: String = row.get(1).unwrap();
+            items_by_name.insert(item_id, name);
+            //eprintln!("{item_id} ({name})")
+        }
+    );
+
+    for (item_id, weight) in recommended_items.into_iter() {
+        let name = items_by_name.get(&item_id).unwrap();
+        eprintln!("\t[{item_id}] {name} ({:.3})", weight);
+    }
+
+    //eprintln!("{:?}", sorted);
+}
+
+fn update_topk_index(
+    time_of_interest: usize,
+    items_by_user_trace: &mut Trace<UserId, usize, usize, isize>,
+    sparse_topk_index: &mut SparseTopKIndex,
+) {
+    let time_to_check = time_of_interest - 1;
+    // TODO optimise to use internal batches and skip non-relevant ones
+    let (mut cursor, storage) = items_by_user_trace.cursor();
+    while cursor.key_valid(&storage) {
+        let user_id = cursor.key(&storage);
+        let mut item_ids = Vec::new();
+        while cursor.val_valid(&storage) {
+            let item_id = cursor.val(&storage);
+            cursor.map_times(&storage, |time, diff| {
+                // This codes makes some strong assumptions about the changes we encounter...
+                if *time == time_to_check && *diff == -1 {
+                    // The assumption here is that we only see deletions
+                    //sparse_topk_index.forget(*user_id, *item_id);
+                    item_ids.push(*item_id);
+                }
+            });
+            cursor.step_val(&storage);
+        }
+        if !item_ids.is_empty() {
+            sparse_topk_index.forget_multiple(*user_id, &item_ids);
+        }
+        cursor.step_key(&storage);
+    }
+}
+
+// https://github.com/TimelyDataflow/differential-dataflow/issues/104
+fn update_user_embeddings(
+    time_of_interest: usize,
+    user_embeddings_trace: &mut Trace<UserId, DiscretisedItemVector, usize, isize>,
+    user_embeddings: &mut HashMap<UserId, DiscretisedItemVector>,
+) -> usize {
+    let time_to_check = time_of_interest - 1;
+    let mut num_changed_embeddings = 0;
+    // TODO optimise to use internal batches and skip non-relevant ones
+    let (mut cursor, storage) = user_embeddings_trace.cursor();
+    while cursor.key_valid(&storage) {
+        let user_id = cursor.key(&storage);
+        while cursor.val_valid(&storage) {
+            let embedding = cursor.val(&storage);
+            cursor.map_times(&storage, |time, diff| {
+                // This codes makes some strong assumptions about the changes we encounter...
+                if *time == time_to_check && *diff == 1 {
+                    user_embeddings.insert(*user_id, embedding.clone());
+                    num_changed_embeddings += 1;
+                }
+            });
+            cursor.step_val(&storage);
+        }
+        cursor.step_key(&storage);
+    }
+    num_changed_embeddings
+}

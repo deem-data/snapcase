@@ -31,34 +31,6 @@ use differential_dataflow::input::InputSession;
 use crate::tifuknn::types::Trace;
 
 
-/*
-pub fn tifu_knn<T>(
-    worker: &mut Worker<Allocator>,
-    baskets_input: &mut InputSession<T, (u32, Basket), isize>,
-    hyperparams: HyperParams,
-) -> (ProbeHandle<T>, Trace<usize, DiscretisedItemVector, T, isize>)
-    where T: Timestamp + TotalOrder + Lattice + Refines<()> + Display {
-
-    worker.dataflow(|scope| {
-
-        let baskets = baskets_input.to_collection(scope);
-
-        let mut probe = Handle::new();
-
-        let user_vectors = dataflow::user_vectors(&baskets, hyperparams);
-
-
-        let arranged_user_vectors = user_vectors
-            //.inspect(|x| {dbg!(x);})
-            .inspect(|x| {eprintln!("{:?}", x)})
-            .arrange_by_key();
-
-        arranged_user_vectors.stream.probe_with(&mut probe);
-
-        (probe, arranged_user_vectors.trace)
-    })
-}
-*/
 pub fn update_recommendations(
     time: usize,
     baskets_input: &mut InputSession<usize, (u32, Basket), isize>,
