@@ -3,16 +3,53 @@
 <head>
     <meta charset="utf-8">
     <title>Snapcase Demo</title>
+    <style>
+        /* Style for tabs */
+        .tab {
+          display: none;
+        }
+
+        /* Style for the active tab */
+        .active-tab {
+          display: block;
+          padding: 5px;
+          border: 1px solid #ccc;
+          background-color: #f2f2f2;
+          border-radius: 0 0 5px 5px;
+          width: 1200px;
+        }
+
+        /* Style for the tab buttons */
+        .tab-button {
+          cursor: pointer;
+          padding: 10px 15px;
+          border: 1px solid #ccc;
+          background-color: #f2f2f2;
+          border-radius: 5px 5px 0 0;
+          margin-right: 5px;
+        }
+
+        /* Style for the active tab button */
+        .active-tab-button {
+          font-weight: bold;
+        }
+    </style>
     <script src="products.js"></script>
     <script src="aisles.js"></script>
     <script src="https://code.jquery.com/jquery-2.2.4.min.js" integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44=" crossorigin="anonymous"></script>
     <script>
         var socket = new WebSocket("ws://localhost:8080/ws");
 
-        const SENSITIVE_AISLES = [27, 28, 62, 124, 134];
+        var currentSensitiveCategory = 'alcohol';
+
+        const SENSITIVE_AISLES = {
+            'alcohol': [27, 28, 62, 124, 134],
+            'meat': [5, 15, 33, 34, 35, 49, 95, 96, 106, 122],
+            'unhealthy': [37, 38, 45, 61, 77, 79, 106],
+        };
 
         function isSensitive(itemId) {
-            return SENSITIVE_AISLES.includes(AISLES[itemId]);
+            return SENSITIVE_AISLES[currentSensitiveCategory].includes(AISLES[itemId]);
         }
 
         socket.onmessage = function (event) {
@@ -31,6 +68,7 @@
                     if (isSensitive(itemId)) {
                         itemName = '<span style="color:red;">' + itemName + '</span>';
                     }
+                    itemName = '<a href="javascript:deletePurchase(' + response["payload"]["user_id"] + ', ' +  itemId + ')">' + itemName + '</a>';
                     basketItems += itemName + ", ";
                     if (basket != currentBasket) {
                         if (currentBasket != -1) {
@@ -86,21 +124,110 @@
                     .join(", ");
                 document.getElementById("embedding").innerHTML = html;
             }
+
+            if (response["response_type"] == "deletion_impact") {
+                //{"payload":{"num_inspected_neighbors":15944,"num_updated_neighbors":127,"user_id":93210},"response_type":"deletion_impact"}
+                var userId = response["payload"]["user_id"]
+
+                var databaseUpdate = response["payload"]["database_update_duration"];
+                var embeddingUpdate = response["payload"]["embedding_update_duration"];
+                var indexUpdate = response["payload"]["topk_index_update_duration"];
+                var query = response["payload"]["deletion_query"];
+
+                const update = `
+                  Deleted purchases for user ${response["payload"]["user_id"]} with the following query:
+
+                  ${query}
+
+                  in ${databaseUpdate} ms.
+
+                  Materialised recommendation model updated via incremental view maintenance:
+                   - Update the user embedding took ${embeddingUpdate} ms.
+                   - Update of the top-k index took ${indexUpdate} ms
+                   - Maintenance of the top-k index involved inspection of the entries for ${response["payload"]["num_inspected_neighbors"]} users and
+                     updates for the entries of ${response["payload"]["num_updated_neighbors"]} users.
+                `;
+
+                alert(update);
+                userFocus(userId);
+            }
         }
 
         function userFocus(userId) {
-            var request = {};
-            request["user_id"] = userId;
+            var request = {
+                "UserFocus": {
+                    "user_id": userId
+                }
+            };
             socket.send(JSON.stringify(request));
         }
+
+        function deletePurchase(userId, itemId) {
+            var request = {
+                "PurchaseDeletion": {
+                    "user_id": userId,
+                    "item_id": itemId,
+                }
+            };
+            socket.send(JSON.stringify(request));
+        }
+
+      function openTab(tabName) {
+        const tabs = document.getElementsByClassName("tab");
+        for (let i = 0; i < tabs.length; i++) {
+          tabs[i].classList.remove("active-tab");
+        }
+
+        const tabButtons = document.getElementsByClassName("tab-button");
+        for (let i = 0; i < tabButtons.length; i++) {
+          tabButtons[i].classList.remove("active-tab-button");
+        }
+
+        // Yes, this is an ugly hack
+        currentSensitiveCategory = tabName;
+
+        const selectedTab = document.getElementById(tabName);
+        selectedTab.classList.add("active-tab");
+        const selectedTabButton = document.getElementById(tabName + '-button');
+        selectedTabButton.classList.add("active-tab-button");
+      }
     </script>
 </head>
 <body>
 <p>
 <h2>Instacart Dataset</h2>
-206,210 users, 49,689 items, 33,819,106 purchases<br/>
-Sample users: <a href="javascript:userFocus(93210);">93210</a>, <a href="javascript:userFocus(40058);">40058</a>, <a href="javascript:userFocus(66492);">66492</a>
+<b>Purchase database</b><br/>
+206,210 users<br/>
+49,689 items<br/>
+33,819,106 purchases<br/>
+<br/>
+<b>Materialised recommendation model (TIFU)</b><br/>
+206,210 sparse embeddings of dimension 49,689<br/>
+Top-k index with 10,310,340 entries
+<br/>
+<br/>
+
+<div>
+    <button id="alcohol-button" class="tab-button active-tab-button" onclick="openTab('alcohol')">Alcohol</button>
+    <button id="meat-button" class="tab-button" onclick="openTab('meat')">Meat</button>
+    <button id="unhealthy-button" class="tab-button" onclick="openTab('unhealthy')">Unhealthy food</button>
+</div>
+
+<!-- Tab content -->
+<div id="alcohol" class="tab active-tab">
+    Sample users with alcohol purchases: <a href="javascript:userFocus(93210);">93210</a>, <a href="javascript:userFocus(40058);">40058</a>, <a href="javascript:userFocus(66492);">66492</a><br/>
+</div>
+
+<div id="meat" class="tab">
+    Sample users with meat purchases: <a href="javascript:userFocus(172669);">172669</a>, <a href="javascript:userFocus(33065);">33065</a>, <a href="javascript:userFocus(81781);">81781</a><br/>
+</div>
+
+<div id="unhealthy" class="tab">
+    Sample users with unhealthy food purchases: <a href="javascript:userFocus(119964);">119964</a>, <a href="javascript:userFocus(122082);">122082</a>
+</div>
 </p>
+
+
 <h3>Relational Database</h3>
 <div style="padding: 5px; border: 1px solid black; width: 1200px;">
     <b>Purchases</b>

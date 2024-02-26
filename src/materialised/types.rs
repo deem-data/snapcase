@@ -15,3 +15,14 @@ impl UserEmbedding {
         Self { user_id: vector.id, weights_per_item }
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeletionImpact {
+    pub(crate) user_id: usize,
+    pub(crate) deletion_query: String,
+    pub(crate) database_update_duration: u128,
+    pub(crate) embedding_update_duration: u128,
+    pub(crate) topk_index_update_duration: u128,
+    pub(crate) num_inspected_neighbors: usize,
+    pub(crate) num_updated_neighbors: usize,
+}

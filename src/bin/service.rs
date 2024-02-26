@@ -19,7 +19,7 @@ use timely::worker::Config;
 
 use timely::communication::allocator::thread::Thread;
 
-use snapcase::web::messaging::{UserFocusRequest, ChangeMessage};
+use snapcase::web::messaging::{Requests, ChangeMessage};
 use snapcase::demo::database::PurchaseDatabase;
 use snapcase::tifuknn::hyperparams::PARAMS_INSTACART;
 
@@ -49,7 +49,6 @@ fn demo(worker: Worker<Thread>) {
 
     listen("127.0.0.1:8080", |out| {
         Server {
-            current_step: 0,
             out,
             database: database.clone(),
             tifu_view: tifu_view.clone(),
@@ -58,7 +57,6 @@ fn demo(worker: Worker<Thread>) {
 }
 
 pub struct Server {
-    current_step: usize,
     out: Sender,
     database: Rc<RefCell<PurchaseDatabase>>,
     tifu_view: Rc<RefCell<TifuView>>,
@@ -69,10 +67,6 @@ impl Server {
 
     fn broadcast(&self, message: Message) {
         self.out.broadcast(message).expect("Unable to send message");
-    }
-
-    fn last_update_time(&self) -> usize {
-        self.current_step - 1
     }
 
     fn broadcast_in_order(&self, mut changes: Vec<ChangeMessage>) {
@@ -88,25 +82,6 @@ impl Server {
         self.broadcast(Message::text(json.to_string()));
     }
 
-    fn broadcast_diffs(&self) {
-        /*let changes = collect_diffs(
-            self.trace.clone(),
-            self.last_update_time(),
-            |key, item, time, change| {
-
-                let json = json!({
-                            "data": "bla",
-                            "key": key,
-                            "item": item,
-                            "time": time,
-                            "change": change
-                        });
-
-                ChangeMessage::new(change, Message::text(json.to_string()))
-            });
-
-        self.broadcast_in_order(changes);*/
-    }
 }
 
 
@@ -119,41 +94,37 @@ impl Handler for Server {
         // We assume we always get valid utf-8
         let message_as_string = &msg.into_text().unwrap();
 
-        let parsed_request: SerdeResult<UserFocusRequest> =
+        let parsed_request: SerdeResult<Requests> =
             serde_json::from_slice(&message_as_string.as_bytes());
 
         match parsed_request {
             Ok(request) => {
 
                 println!("Received request: {:?}", request);
-/*
-                self.current_step += 1;
 
-                let mut the_input = self.input.borrow_mut();
+                match request {
+                    Requests::UserFocus(user_focus_request) => {
+                        let user_id = user_focus_request.user_id;
+                        let purchases = self.database.borrow().purchases(user_id);
+                        self.broadcast_json(json!({"response_type": "purchases", "payload": purchases}));
 
-                the_input.insert((request.a, request.b));
+                        let embedding = self.tifu_view.borrow().user_embedding(user_id);
+                        self.broadcast_json(json!({"response_type": "embedding", "payload": embedding}));
 
-                the_input.advance_to(self.current_step);
-                the_input.flush();
+                        let recommendations = self.tifu_view.borrow().recommendations_for(user_id, 0.9);
+                        self.broadcast_json(json!({"response_type": "recommendations", "payload": recommendations}));
 
-                let worker = &mut self.worker;
-                let probe = &self.probe;
+                        let neighbors = self.tifu_view.borrow().neighbors_of(user_id);
+                        self.broadcast_json(json!({"response_type": "neighbors", "payload": neighbors}));
+                    },
+                    Requests::PurchaseDeletion(purchase_deletion) => {
+                        eprintln!("Purchase deletion");
+                        let deletion_impact = self.tifu_view.borrow_mut().forget_purchase(
+                            purchase_deletion.user_id, purchase_deletion.item_id);
 
-                worker.step_while(|| probe.less_than(the_input.time()));
-*/
-                let purchases = self.database.borrow().purchases(request.user_id);
-                self.broadcast_json(json!({"response_type": "purchases", "payload": purchases}));
-
-                let embedding = self.tifu_view.borrow().user_embedding(request.user_id);
-                self.broadcast_json(json!({"response_type": "embedding", "payload": embedding}));
-
-                let recommendations = self.tifu_view.borrow().recommendations_for(request.user_id, 0.9);
-                self.broadcast_json(json!({"response_type": "recommendations", "payload": recommendations}));
-
-                let neighbors = self.tifu_view.borrow().neighbors_of(request.user_id);
-                self.broadcast_json(json!({"response_type": "neighbors", "payload": neighbors}));
-
-                //self.broadcast_diffs();
+                        self.broadcast_json(json!({"response_type": "deletion_impact", "payload": deletion_impact}));
+                    }
+                }
             },
             Err(e) => println!("Error parsing request:\n{:?}\n\n{:?}\n", &message_as_string, e),
         }

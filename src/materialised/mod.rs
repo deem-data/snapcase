@@ -13,6 +13,7 @@ use timely::dataflow::operators::Probe;
 use timely::dataflow::operators::probe::Handle;
 
 use std::collections::HashMap;
+use std::time::Instant;
 use differential_dataflow::trace::{Cursor, TraceReader};
 use crate::caboose::sparse_topk_index::SparseTopKIndex;
 
@@ -23,13 +24,14 @@ use crate::tifuknn::types::{DiscretisedItemVector, HyperParams};
 
 use crate::tifuknn::types::DISCRETISATION_FACTOR;
 
-use sprs::{SpIndex, TriMat};
+use sprs::SpIndex;
 
-use crate::materialised::types::UserEmbedding;
+use crate::materialised::types::{DeletionImpact, UserEmbedding};
 
 pub struct TifuView {
     database: Rc<RefCell<PurchaseDatabase>>,
     worker: Worker<Thread>,
+    current_time: usize,
     baskets_input: Rc<RefCell<InputSession<usize, (usize, usize), isize>>>,
     basket_items_input: Rc<RefCell<InputSession<usize, (usize, usize), isize>>>,
     user_embeddings_probe: ProbeHandle<usize>,
@@ -41,6 +43,7 @@ pub struct TifuView {
 }
 
 impl TifuView {
+
     pub fn new(
         mut worker: Worker<Thread>,
         database: Rc<RefCell<PurchaseDatabase>>,
@@ -119,10 +122,10 @@ impl TifuView {
 
         let mut topk_index = SparseTopKIndex::new(interactions.to_csr(), 50);
         snapcase::caboose::serialize::serialize_to_file(topk_index, "__instacart-index.bin");*/
-        eprintln!("Loading precomputed index...");
-        let mut topk_index = crate::caboose::serialize::deserialize_from(num_users, num_items,
-                                                                            "__instacart-index.bin");
 
+        let topk_index = crate::caboose::serialize::deserialize_from(num_users, num_items,
+                                                                            "__instacart-index.bin");
+        eprintln!("Loaded precomputed index...");
 
         let baskets_input = Rc::new(RefCell::new(baskets_input));
         let basket_items_input = Rc::new(RefCell::new(basket_items_input));
@@ -130,6 +133,7 @@ impl TifuView {
         Self {
             database,
             worker,
+            current_time: 1,
             baskets_input,
             basket_items_input,
             user_embeddings_probe,
@@ -184,10 +188,134 @@ impl TifuView {
 
         recommended_items
     }
+
+    pub fn forget_purchase(&mut self, user_id: usize, item_id: usize) -> DeletionImpact {
+
+        let database_update_start = Instant::now();
+        // TODO would be much nicer to have real CDC
+        let mut basket_ids: Vec<usize> = Vec::new();
+        self.database.borrow().from_query(&format!(r#"
+            SELECT  op.order_id
+            FROM    order_products op
+            JOIN    orders o ON o.order_id = op.order_id
+            WHERE   o.user_id = {user_id} AND op.product_id = {item_id};"#),
+            |row| basket_ids.push(row.get(0).unwrap())
+        );
+
+        let bstr = basket_ids.iter()
+            .map(|basket_id| basket_id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let deletion_query = format!(r#"
+            DELETE FROM order_products
+                  WHERE product_id = {item_id}
+                    AND order_id IN ({bstr});"#
+        );
+
+        self.database.borrow().execute(&deletion_query);
+        let database_update_duration = database_update_start.elapsed().as_millis();
+
+        let embedding_update_start = Instant::now();
+        // Scoping need for mutable borrows
+        {
+            let basket_items_input = &mut self.basket_items_input.borrow_mut();
+            let baskets_input = &mut self.baskets_input.borrow_mut();
+
+            for basket_id in basket_ids.into_iter() {
+                basket_items_input.remove((basket_id, item_id));
+            }
+
+            self.current_time += 1;
+            baskets_input.advance_to(self.current_time);
+            basket_items_input.advance_to(self.current_time);
+            baskets_input.flush();
+            basket_items_input.flush();
+
+            eprintln!("Moving to time {} for purchase deletion", self.current_time);
+            self.worker.step_while(||
+                self.user_embeddings_probe.less_than(baskets_input.time())
+                    || self.user_embeddings_probe.less_than(basket_items_input.time())
+                    || self.items_by_user_probe.less_than(baskets_input.time())
+                    || self.items_by_user_probe.less_than(basket_items_input.time())
+            );
+        }
+        eprintln!("Done with {}", self.current_time);
+        let _ = self.update_user_embeddings();
+        let embedding_update_duration = embedding_update_start.elapsed().as_millis();
+
+        let topk_index_update_start = Instant::now();
+        let (count_nochange, count_update, count_recompute) = self.update_topk_index();
+        let topk_index_update_duration = topk_index_update_start.elapsed().as_millis();
+
+        DeletionImpact {
+            user_id,
+            deletion_query,
+            database_update_duration,
+            embedding_update_duration,
+            topk_index_update_duration,
+            num_inspected_neighbors: count_nochange as usize,
+            num_updated_neighbors: (count_update + count_recompute) as usize
+        }
+    }
+
+    fn update_topk_index(&mut self) -> (i32, i32, i32) {
+        // TODO this is ugly...
+        let (mut count_nochange, mut count_update, mut count_recompute) = (0, 0, 0);
+        let time_to_check = self.current_time - 1;
+        // TODO optimise to use internal batches and skip non-relevant ones
+        let (mut cursor, storage) = self.items_by_user_trace.cursor();
+        while cursor.key_valid(&storage) {
+            let user_id = cursor.key(&storage);
+            let mut item_ids = Vec::new();
+            while cursor.val_valid(&storage) {
+                let item_id = cursor.val(&storage);
+                cursor.map_times(&storage, |time, diff| {
+                    // This codes makes some strong assumptions about the changes we encounter...
+                    if *time == time_to_check && *diff == -1 {
+                        // The assumption here is that we only see deletions
+                        item_ids.push(*item_id);
+                    }
+                });
+                cursor.step_val(&storage);
+            }
+            if !item_ids.is_empty() {
+                (count_nochange, count_update, count_recompute) =
+                    self.topk_index.forget_multiple(*user_id, &item_ids);
+            }
+            cursor.step_key(&storage);
+        }
+
+        (count_nochange, count_update, count_recompute)
+    }
+
+    // https://github.com/TimelyDataflow/differential-dataflow/issues/104
+    fn update_user_embeddings(&mut self) -> usize {
+        let time_to_check = self.current_time - 1;
+        let mut num_changed_embeddings = 0;
+        // TODO optimise to use internal batches and skip non-relevant ones
+        let (mut cursor, storage) = self.user_embeddings_trace.cursor();
+        while cursor.key_valid(&storage) {
+            let user_id = cursor.key(&storage);
+            while cursor.val_valid(&storage) {
+                let embedding = cursor.val(&storage);
+                cursor.map_times(&storage, |time, diff| {
+                    // This codes makes some strong assumptions about the changes we encounter...
+                    if *time == time_to_check && *diff == 1 {
+                        self.user_embeddings.insert(*user_id, embedding.clone());
+                        num_changed_embeddings += 1;
+                    }
+                });
+                cursor.step_val(&storage);
+            }
+            cursor.step_key(&storage);
+        }
+        num_changed_embeddings
+    }
 }
 
 
-
+//TODO remove duplication
 // https://github.com/TimelyDataflow/differential-dataflow/issues/104
 fn update_user_embeddings(
     time_of_interest: usize,

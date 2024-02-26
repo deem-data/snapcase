@@ -366,7 +366,7 @@ impl SparseTopKIndex {
     }
 
 
-    pub fn forget_multiple(&mut self, row: usize, columns: &[usize]) {
+    pub fn forget_multiple(&mut self, row: usize, columns: &[usize]) -> (i32, i32, i32) {
         SparseTopKIndex::configure_rayon(false);
 
         let similarity = COSINE;
@@ -544,8 +544,9 @@ impl SparseTopKIndex {
         let _durations = [parallel_similarity_duration, change_duration, change_apply_duration,
             recompute_duration];
 
-        eprintln!("CABOOSE: inspected: {:?}, updated {:?}, recomputed {:?}",
-                  count_nochange, count_update, count_recompute);
+        //eprintln!("CABOOSE: inspected: {:?}, updated {:?}, recomputed {:?}",
+        //          count_nochange, count_update, count_recompute);
+        (count_nochange, count_update, count_recompute)
     }
 }
 

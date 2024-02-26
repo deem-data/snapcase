@@ -29,6 +29,10 @@ impl PurchaseDatabase {
         Self { duckdb }
     }
 
+    pub fn execute(&self, query: &str) {
+        self.duckdb.execute(&query, []).unwrap();
+    }
+
     pub fn from_query<F>(&self, query: &str, mut consumer: F)
         where
             F: FnMut(&Row<'_>) -> ()
