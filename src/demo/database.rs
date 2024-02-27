@@ -11,8 +11,17 @@ type ItemId = usize;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Purchases {
     pub user_id: usize,
-    pub items_by_basket: Vec<(usize, usize)>,
+    pub item_purchases: Vec<ItemPurchase>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ItemPurchase {
+    pub day_of_week: usize,
+    pub hour_of_day: usize,
+    pub basket_id: usize,
+    pub item_id: usize,
+}
+
 
 impl PurchaseDatabase {
     pub fn new() -> Self {
@@ -45,9 +54,9 @@ impl PurchaseDatabase {
     }
 
     pub fn purchases(&self, user_id: usize) -> Purchases {
-        let mut items_by_basket = Vec::new();
+        let mut item_purchases = Vec::new();
         self.from_query(&format!(r#"
-                SELECT    op.order_id, op.product_id
+                SELECT    o.order_dow, o.order_hour_of_day, o.order_id, op.product_id
                   FROM    products p
                   JOIN    order_products op
                     ON    p.product_id = op.product_id
@@ -56,14 +65,21 @@ impl PurchaseDatabase {
                  WHERE    o.user_id = {user_id}
               ORDER BY    op.order_id;
                 "#, ),
-                        |row| {
-                            let basket_id: BasketId = row.get(0).unwrap();
-                            let item_id: ItemId = row.get(1).unwrap();
-                            items_by_basket.push((basket_id, item_id))
-                        }
+            |row| {
+                let day_of_week: usize = row.get(0).unwrap();
+                let hour_of_day: usize = row.get(1).unwrap();
+                let basket_id: BasketId = row.get(2).unwrap();
+                let item_id: ItemId = row.get(3).unwrap();
+                item_purchases.push(ItemPurchase{
+                    day_of_week,
+                    hour_of_day,
+                    basket_id,
+                    item_id
+                })
+            }
         );
 
-        Purchases { user_id, items_by_basket }
+        Purchases { user_id, item_purchases }
     }
 
     pub fn alcohol_purchases<F>(&self, user_id: usize, mut consumer: F)

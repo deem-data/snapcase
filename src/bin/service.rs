@@ -19,7 +19,7 @@ use timely::worker::Config;
 
 use timely::communication::allocator::thread::Thread;
 
-use snapcase::web::messaging::{Requests, ChangeMessage};
+use snapcase::web::messaging::Requests;
 use snapcase::demo::database::PurchaseDatabase;
 use snapcase::tifuknn::hyperparams::PARAMS_INSTACART;
 
@@ -69,19 +69,9 @@ impl Server {
         self.out.broadcast(message).expect("Unable to send message");
     }
 
-    fn broadcast_in_order(&self, mut changes: Vec<ChangeMessage>) {
-        changes.sort();
-        changes.into_iter()
-            .for_each(|change| {
-                println!("\t{}", change.message.as_text().unwrap());
-                self.broadcast(change.message)
-            });
-    }
-
     fn broadcast_json(&self, json: serde_json::Value) {
         self.broadcast(Message::text(json.to_string()));
     }
-
 }
 
 
@@ -111,7 +101,7 @@ impl Handler for Server {
                         let embedding = self.tifu_view.borrow().user_embedding(user_id);
                         self.broadcast_json(json!({"response_type": "embedding", "payload": embedding}));
 
-                        let recommendations = self.tifu_view.borrow().recommendations_for(user_id, 0.9);
+                        let recommendations = self.tifu_view.borrow().recommendations_for(user_id, 0.1);
                         self.broadcast_json(json!({"response_type": "recommendations", "payload": recommendations}));
 
                         let neighbors = self.tifu_view.borrow().neighbors_of(user_id);

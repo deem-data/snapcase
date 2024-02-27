@@ -1,6 +1,5 @@
-use ws::Message;
-
-use std::cmp::Ordering;
+//use ws::Message;
+//use std::cmp::Ordering;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Requests {
@@ -19,6 +18,7 @@ pub struct PurchaseDeletionRequest {
     pub item_id: usize,
 }
 
+/*
 #[derive(Eq, PartialEq)]
 pub struct ChangeMessage {
     pub change: isize,
@@ -42,4 +42,4 @@ impl Ord for ChangeMessage {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(&other).unwrap()
     }
-}
+}*/

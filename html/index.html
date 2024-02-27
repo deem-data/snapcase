@@ -60,19 +60,29 @@
 
             if (response["response_type"] == "purchases") {
                 var currentBasket = -1;
-                basketItems = "<ul><li>";
-                for (index in response["payload"]["items_by_basket"]) {
-                    var basket = response["payload"]["items_by_basket"][index][0];
-                    var itemId = response["payload"]["items_by_basket"][index][1]
+                var basketItems = "";
+                for (index in response["payload"]["item_purchases"]) {
+                    var basket = response["payload"]["item_purchases"][index]["basket_id"];
+                    var itemId = response["payload"]["item_purchases"][index]["item_id"]
                     var itemName = PRODUCTS[itemId];
                     if (isSensitive(itemId)) {
                         itemName = '<span style="color:red;">' + itemName + '</span>';
+                        itemName += ' <a href="javascript:deletePurchase(' + response["payload"]["user_id"] + ', ' +  itemId + ')">[forget]</a>';
                     }
-                    itemName = '<a href="javascript:deletePurchase(' + response["payload"]["user_id"] + ', ' +  itemId + ')">' + itemName + '</a>';
                     basketItems += itemName + ", ";
                     if (basket != currentBasket) {
+
+                        var day = response["payload"]["item_purchases"][index]["day_of_week"];
+                        var hour = response["payload"]["item_purchases"][index]["hour_of_day"];
+
+                        const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+                        var time = weekDays[day] + ', ' + hour + ':00 - ';
+
                         if (currentBasket != -1) {
-                            basketItems += "</li><li>";
+                            basketItems += "</li><li>" + time;
+                        } else {
+                            basketItems = "<ul><li>" + time + basketItems;
                         }
                         currentBasket = basket;
                     }
@@ -215,15 +225,15 @@ Top-k index with 10,310,340 entries
 
 <!-- Tab content -->
 <div id="alcohol" class="tab active-tab">
-    Sample users with alcohol purchases: <a href="javascript:userFocus(93210);">93210</a>, <a href="javascript:userFocus(40058);">40058</a>, <a href="javascript:userFocus(66492);">66492</a><br/>
+    Sample users with alcohol purchases: <a href="javascript:userFocus(93210);">93210</a>, <a href="javascript:userFocus(66492);">66492</a><br/>
 </div>
 
 <div id="meat" class="tab">
-    Sample users with meat purchases: <a href="javascript:userFocus(172669);">172669</a>, <a href="javascript:userFocus(33065);">33065</a>, <a href="javascript:userFocus(81781);">81781</a><br/>
+    Sample users with meat purchases:<a href="javascript:userFocus(127686);">127686</a>, <a href="javascript:userFocus(195704);">195704</a>
 </div>
 
 <div id="unhealthy" class="tab">
-    Sample users with unhealthy food purchases: <a href="javascript:userFocus(119964);">119964</a>, <a href="javascript:userFocus(122082);">122082</a>
+    Sample users with unhealthy food purchases: <a href="javascript:userFocus(119964);">119964</a>, <a href="javascript:userFocus(169797);">169797</a>
 </div>
 </p>
 

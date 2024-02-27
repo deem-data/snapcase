@@ -59,7 +59,7 @@ impl TifuView {
         let mut user_embeddings_probe = Handle::new();
         let mut items_by_user_probe = Handle::new();
 
-        let (mut user_embeddings_trace, mut items_by_user_trace) =
+        let (mut user_embeddings_trace, items_by_user_trace) =
             worker.dataflow(|scope| {
 
                 let baskets = baskets_input.to_collection(scope);
