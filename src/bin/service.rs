@@ -33,13 +33,11 @@ fn main() {
     while worker.step_or_park(None) { }
 }
 
-fn read_local(file: &str) -> Vec<u8> {
+fn read_local(file: &str) -> std::io::Result<Vec<u8>> {
     let mut data = Vec::new();
-
-    let mut file = File::open(file).expect("Unable to read file!");
-    file.read_to_end(&mut data).expect("Unable to read file!");
-
-    data
+    let mut file = File::open(file)?;
+    file.read_to_end(&mut data)?;
+    Ok(data)
 }
 
 fn demo(worker: Worker<Thread>) {
@@ -75,8 +73,6 @@ impl Server {
 }
 
 
-
-
 impl Handler for Server {
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
@@ -96,23 +92,31 @@ impl Handler for Server {
                     Requests::UserFocus(user_focus_request) => {
                         let user_id = user_focus_request.user_id;
                         let purchases = self.database.borrow().purchases(user_id);
-                        self.broadcast_json(json!({"response_type": "purchases", "payload": purchases}));
+                        self.broadcast_json(json!({"response_type": "purchases",
+                            "payload": purchases}));
 
-                        let embedding = self.tifu_view.borrow().user_embedding(user_id);
-                        self.broadcast_json(json!({"response_type": "embedding", "payload": embedding}));
+                        let tifu_view = self.tifu_view.borrow();
 
-                        let recommendations = self.tifu_view.borrow().recommendations_for(user_id, 0.1);
-                        self.broadcast_json(json!({"response_type": "recommendations", "payload": recommendations}));
+                        let embedding = tifu_view.user_embedding(user_id);
+                        self.broadcast_json(json!({"response_type": "embedding",
+                            "payload": embedding}));
 
-                        let neighbors = self.tifu_view.borrow().neighbors_of(user_id);
-                        self.broadcast_json(json!({"response_type": "neighbors", "payload": neighbors}));
+                        let recommendations = tifu_view.recommendations_for(user_id, 0.1);
+                        self.broadcast_json(json!({"response_type": "recommendations",
+                            "payload": recommendations}));
+
+                        let neighbors = tifu_view.neighborhood(user_id);
+                        self.broadcast_json(json!({"response_type": "neighbors",
+                            "payload": neighbors}));
                     },
+
                     Requests::PurchaseDeletion(purchase_deletion) => {
                         eprintln!("Purchase deletion");
                         let deletion_impact = self.tifu_view.borrow_mut().forget_purchase(
                             purchase_deletion.user_id, purchase_deletion.item_id);
 
-                        self.broadcast_json(json!({"response_type": "deletion_impact", "payload": deletion_impact}));
+                        self.broadcast_json(json!({"response_type": "deletion_impact",
+                            "payload": deletion_impact}));
                     }
                 }
             },
@@ -125,11 +129,19 @@ impl Handler for Server {
     fn on_request(&mut self, req: &Request) -> Result<Response> {
         match req.resource() {
             "/ws" => Response::from_request(req),
-            //"/style.css" => Ok(Response::new(200, "OK", read_local("html/style.css"))),
-            "/products.js" => Ok(Response::new(200, "OK", read_local("html/products.js"))),
-            "/aisles.js" => Ok(Response::new(200, "OK", read_local("html/aisles.js"))),
-            "/" => Ok(Response::new(200, "OK", read_local("html/index.html"))),
+            "/" => Ok(Response::new(200, "OK", read_local("html/index.html").unwrap())),
+            path if path.ends_with(".html") || path.ends_with(".png") || path.ends_with(".css") || path.ends_with(".js") => {
+                // TODO we should return the correct content type too here...
+                serve_or_404(&format!("html{}", path))
+            },
             _ => Ok(Response::new(404, "Not Found", b"404 - Not Found".to_vec())),
         }
+    }
+}
+
+fn serve_or_404(path: &str) -> ws::Result<Response> {
+    match read_local(path) {
+        Ok(contents) => Ok(Response::new(200, "OK", contents)),
+        _ => Ok(Response::new(404, "Not Found", b"404 - Not Found".to_vec())),
     }
 }

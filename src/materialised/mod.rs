@@ -26,7 +26,7 @@ use crate::tifuknn::types::DISCRETISATION_FACTOR;
 
 use sprs::SpIndex;
 
-use crate::materialised::types::{DeletionImpact, UserEmbedding};
+use crate::materialised::types::{DeletionImpact, Neighborhood, UserEmbedding};
 
 pub struct TifuView {
     database: Rc<RefCell<PurchaseDatabase>>,
@@ -145,10 +145,62 @@ impl TifuView {
         }
     }
 
-    pub fn neighbors_of(&self, user_id: usize) -> Vec<(usize, f32)> {
+    pub fn neighborhood(&self, user_id: usize) -> Neighborhood {
+
+        let adjacent = self.neighbors_of(user_id);
+        //TODO the index should know this number...
+        let incident = self.in_neighbors_of(206210, user_id);
+
+        let all_neighbor_ids = adjacent
+            .iter().map(|(id, _)| id.to_string())
+            .chain(incident.iter().map(|(id, _)| id.to_string()))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let mut top_aisles = Vec::new();
+
+        self.database.borrow().from_query(&format!(r#"
+            SELECT    p.aisle_id, COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS normalized_count
+              FROM    products p
+              JOIN    order_products op
+                ON    p.product_id = op.product_id
+              JOIN    orders o
+                ON    o.order_id = op.order_id
+             WHERE    o.user_id IN ({})
+            GROUP BY  p.aisle_id
+            ORDER BY  normalized_count DESC
+            LIMIT 10;
+            "#, all_neighbor_ids),
+            |row| {
+                let aisle_id: usize = row.get(0).unwrap();
+                let percentage: f32 = row.get(1).unwrap();
+                top_aisles.push((aisle_id, percentage))
+            });
+
+
+
+        Neighborhood { user_id, adjacent, incident, top_aisles }
+    }
+
+    fn neighbors_of(&self, user_id: usize) -> Vec<(usize, f32)> {
         self.topk_index.neighbors(user_id)
             .map(|row| (row.row as usize, row.similarity))
             .collect()
+    }
+
+    fn in_neighbors_of(&self, num_users: usize, user_id: usize) -> Vec<(usize, f32)> {
+
+        let mut incident_to = Vec::new();
+
+        for other_user_id in 0..num_users {
+            for row in self.topk_index.neighbors(other_user_id) {
+                if row.row as usize == user_id {
+                    incident_to.push((other_user_id, row.similarity));
+                }
+            }
+        }
+
+        incident_to
     }
 
     pub fn user_embedding(&self, user_id: usize) -> UserEmbedding {
@@ -202,7 +254,7 @@ impl TifuView {
             |row| basket_ids.push(row.get(0).unwrap())
         );
 
-        let bstr = basket_ids.iter()
+        let baskets_list = basket_ids.iter()
             .map(|basket_id| basket_id.to_string())
             .collect::<Vec<_>>()
             .join(", ");
@@ -210,20 +262,22 @@ impl TifuView {
         let deletion_query = format!(r#"
             DELETE FROM order_products
                   WHERE product_id = {item_id}
-                    AND order_id IN ({bstr});"#
+                    AND order_id IN ({baskets_list});"#
         );
 
         self.database.borrow().execute(&deletion_query);
         let database_update_duration = database_update_start.elapsed().as_millis();
 
+        let old_embedding = self.user_embeddings.get(&user_id).unwrap().clone();
+
         let embedding_update_start = Instant::now();
-        // Scoping need for mutable borrows
+        // Scoping needed for mutable borrows
         {
             let basket_items_input = &mut self.basket_items_input.borrow_mut();
             let baskets_input = &mut self.baskets_input.borrow_mut();
 
-            for basket_id in basket_ids.into_iter() {
-                basket_items_input.remove((basket_id, item_id));
+            for basket_id in &basket_ids {
+                basket_items_input.remove((*basket_id, item_id));
             }
 
             self.current_time += 1;
@@ -244,13 +298,41 @@ impl TifuView {
         let _ = self.update_user_embeddings();
         let embedding_update_duration = embedding_update_start.elapsed().as_millis();
 
+        let updated_embedding = self.user_embeddings.get(&user_id).unwrap();
+
+        let new_weights: HashMap<usize, f64> = updated_embedding.indices.iter().zip(updated_embedding.data.iter())
+            .map(|(item_id, weight)| (*item_id, *weight  as f64 / DISCRETISATION_FACTOR))
+            .collect();
+
+        let embedding_difference: Vec<(usize, f64)> = old_embedding.indices.iter().zip(old_embedding.data.iter())
+            .filter_map(|(index, weight)| {
+                let new_weight = if new_weights.contains_key(index) {
+                    *new_weights.get(&index).unwrap()
+                } else {
+                    0.0_f64
+                };
+                let weight_diff = new_weight - (*weight as f64 / DISCRETISATION_FACTOR);
+
+                if weight_diff != 0.0 {
+                    Some((*index, weight_diff))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+
+
         let topk_index_update_start = Instant::now();
         let (count_nochange, count_update, count_recompute) = self.update_topk_index();
         let topk_index_update_duration = topk_index_update_start.elapsed().as_millis();
 
         DeletionImpact {
             user_id,
+            item_id,
             deletion_query,
+            basket_ids,
+            embedding_difference,
             database_update_duration,
             embedding_update_duration,
             topk_index_update_duration,

@@ -1,0 +1,7 @@
+Recommendations as wordcloud (size of fonts corresponding to weights)
+
+aisle histogram
+
+changes: cross out if removed, color if weight changes
+
+"query plan" with statistics

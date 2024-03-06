@@ -17,9 +17,20 @@ impl UserEmbedding {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct Neighborhood {
+    pub(crate) user_id: usize,
+    pub(crate) adjacent: Vec<(usize, f32)>,
+    pub(crate) incident: Vec<(usize, f32)>,
+    pub(crate) top_aisles: Vec<(usize, f32)>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DeletionImpact {
     pub(crate) user_id: usize,
+    pub(crate) item_id: usize,
     pub(crate) deletion_query: String,
+    pub(crate) basket_ids: Vec<usize>,
+    pub(crate) embedding_difference: Vec<(usize, f64)>,
     pub(crate) database_update_duration: u128,
     pub(crate) embedding_update_duration: u128,
     pub(crate) topk_index_update_duration: u128,

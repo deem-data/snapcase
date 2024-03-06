@@ -3,205 +3,11 @@
 <head>
     <meta charset="utf-8">
     <title>Snapcase Demo</title>
-    <style>
-        /* Style for tabs */
-        .tab {
-          display: none;
-        }
-
-        /* Style for the active tab */
-        .active-tab {
-          display: block;
-          padding: 5px;
-          border: 1px solid #ccc;
-          background-color: #f2f2f2;
-          border-radius: 0 0 5px 5px;
-          width: 1200px;
-        }
-
-        /* Style for the tab buttons */
-        .tab-button {
-          cursor: pointer;
-          padding: 10px 15px;
-          border: 1px solid #ccc;
-          background-color: #f2f2f2;
-          border-radius: 5px 5px 0 0;
-          margin-right: 5px;
-        }
-
-        /* Style for the active tab button */
-        .active-tab-button {
-          font-weight: bold;
-        }
-    </style>
+    <link rel="stylesheet" type="text/css" href="styles.css"/>
     <script src="products.js"></script>
     <script src="aisles.js"></script>
     <script src="https://code.jquery.com/jquery-2.2.4.min.js" integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44=" crossorigin="anonymous"></script>
-    <script>
-        var socket = new WebSocket("ws://localhost:8080/ws");
-
-        var currentSensitiveCategory = 'alcohol';
-
-        const SENSITIVE_AISLES = {
-            'alcohol': [27, 28, 62, 124, 134],
-            'meat': [5, 15, 33, 34, 35, 49, 95, 96, 106, 122],
-            'unhealthy': [37, 38, 45, 61, 77, 79, 106],
-        };
-
-        function isSensitive(itemId) {
-            return SENSITIVE_AISLES[currentSensitiveCategory].includes(AISLES[itemId]);
-        }
-
-        socket.onmessage = function (event) {
-            var messages = document.getElementById("messages");
-            messages.innerHTML = event.data + "\n" + messages.innerHTML;
-
-            var response = JSON.parse(event.data);
-
-            if (response["response_type"] == "purchases") {
-                var currentBasket = -1;
-                var basketItems = "";
-                for (index in response["payload"]["item_purchases"]) {
-                    var basket = response["payload"]["item_purchases"][index]["basket_id"];
-                    var itemId = response["payload"]["item_purchases"][index]["item_id"]
-                    var itemName = PRODUCTS[itemId];
-                    if (isSensitive(itemId)) {
-                        itemName = '<span style="color:red;">' + itemName + '</span>';
-                        itemName += ' <a href="javascript:deletePurchase(' + response["payload"]["user_id"] + ', ' +  itemId + ')">[forget]</a>';
-                    }
-                    basketItems += itemName + ", ";
-                    if (basket != currentBasket) {
-
-                        var day = response["payload"]["item_purchases"][index]["day_of_week"];
-                        var hour = response["payload"]["item_purchases"][index]["hour_of_day"];
-
-                        const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-                        var time = weekDays[day] + ', ' + hour + ':00 - ';
-
-                        if (currentBasket != -1) {
-                            basketItems += "</li><li>" + time;
-                        } else {
-                            basketItems = "<ul><li>" + time + basketItems;
-                        }
-                        currentBasket = basket;
-                    }
-                }
-                basketItems += "</li></ul>";
-                document.getElementById("baskets").innerHTML = basketItems;
-            }
-
-            if (response["response_type"] == "neighbors") {
-                var neighbors = [];
-                for (index in response["payload"]) {
-                    var neighborId = response["payload"][index][0];
-                    var similarity = response["payload"][index][1];
-                    neighbors.push([neighborId, similarity])
-                }
-                const html = neighbors
-                    .sort((a, b) => -(a[1] - b[1]))
-                    .map(e => {
-                        return '<a href="javascript:userFocus(' + e[0] + ');">' + e[0] + "</a> (" + e[1].toFixed(3) +")"
-                    })
-                    .join(", ");
-                document.getElementById("neighbors").innerHTML = html;
-            }
-
-            if (response["response_type"] == "recommendations") {
-                const html = response["payload"]
-                    .map(e => {
-                        var itemId = e[0];
-                        var itemName = PRODUCTS[itemId];
-                        if (isSensitive(itemId)) {
-                            itemName = '<span style="color:red;">' + itemName + '</span>';
-                        }
-                        return itemName + " (" + e[1].toFixed(3) + ")"
-                    })
-                    .join(", ");
-                document.getElementById("recommendations").innerHTML = html;
-            }
-
-            if (response["response_type"] == "embedding") {
-                const html = response["payload"]["weights_per_item"]
-                    .map(e => {
-                        var itemId = e[0];
-                        var itemName = PRODUCTS[itemId];
-                        if (isSensitive(itemId)) {
-                            itemName = '<span style="color:red;">' + itemName + '</span>';
-                        }
-                        return itemName + " (" + e[1].toFixed(3) + ")"
-                    })
-                    .join(", ");
-                document.getElementById("embedding").innerHTML = html;
-            }
-
-            if (response["response_type"] == "deletion_impact") {
-                //{"payload":{"num_inspected_neighbors":15944,"num_updated_neighbors":127,"user_id":93210},"response_type":"deletion_impact"}
-                var userId = response["payload"]["user_id"]
-
-                var databaseUpdate = response["payload"]["database_update_duration"];
-                var embeddingUpdate = response["payload"]["embedding_update_duration"];
-                var indexUpdate = response["payload"]["topk_index_update_duration"];
-                var query = response["payload"]["deletion_query"];
-
-                const update = `
-                  Deleted purchases for user ${response["payload"]["user_id"]} with the following query:
-
-                  ${query}
-
-                  in ${databaseUpdate} ms.
-
-                  Materialised recommendation model updated via incremental view maintenance:
-                   - Update the user embedding took ${embeddingUpdate} ms.
-                   - Update of the top-k index took ${indexUpdate} ms
-                   - Maintenance of the top-k index involved inspection of the entries for ${response["payload"]["num_inspected_neighbors"]} users and
-                     updates for the entries of ${response["payload"]["num_updated_neighbors"]} users.
-                `;
-
-                alert(update);
-                userFocus(userId);
-            }
-        }
-
-        function userFocus(userId) {
-            var request = {
-                "UserFocus": {
-                    "user_id": userId
-                }
-            };
-            socket.send(JSON.stringify(request));
-        }
-
-        function deletePurchase(userId, itemId) {
-            var request = {
-                "PurchaseDeletion": {
-                    "user_id": userId,
-                    "item_id": itemId,
-                }
-            };
-            socket.send(JSON.stringify(request));
-        }
-
-      function openTab(tabName) {
-        const tabs = document.getElementsByClassName("tab");
-        for (let i = 0; i < tabs.length; i++) {
-          tabs[i].classList.remove("active-tab");
-        }
-
-        const tabButtons = document.getElementsByClassName("tab-button");
-        for (let i = 0; i < tabButtons.length; i++) {
-          tabButtons[i].classList.remove("active-tab-button");
-        }
-
-        // Yes, this is an ugly hack
-        currentSensitiveCategory = tabName;
-
-        const selectedTab = document.getElementById(tabName);
-        selectedTab.classList.add("active-tab");
-        const selectedTabButton = document.getElementById(tabName + '-button');
-        selectedTabButton.classList.add("active-tab-button");
-      }
-    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
 </head>
 <body>
 <p>
@@ -252,12 +58,58 @@ Top-k index with 10,310,340 entries
     <div id="embedding"></div>
     <br/>
     <b>Neighbors</b>
-    <div id="neighbors"></div>
-
+    <div id="neighbors" style="width:1200px; height: 50px;"></div>
+    <div id="cy" style="padding: 5px; width: 1150px; height: 250px;"></div>
 </div>
+
 <p>
     <textarea id="messages" rows="5" cols="120">
     </textarea>
 </p>
+
+<div id="customAlert">
+    <p id="customAlertText"></p>
+    <button onclick="closeCustomAlert();userFocus(currentUserId);">OK, update the user page now</button>
+</div>
+
+<script src="scripts.js"></script>
+<script>
+    var cy = cytoscape({
+
+      container: document.getElementById('cy'), // container to render in
+
+      elements: [],
+
+      style: [ // the stylesheet for the graph
+        {
+          selector: 'node',
+          style: {
+            'background-color': '#666',
+            'label': 'data(id)',
+            width: 'data(weight)',
+            height: 'data(weight)'
+          }
+        },
+
+        {
+          selector: 'edge',
+          style: {
+            'width': 3,
+            'line-color': '#ccc',
+            'target-arrow-color': '#ccc',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier'
+          }
+        }
+      ]
+
+    });
+
+    cy.on('tap', 'node', function(evt){
+      var node = evt.target;
+      alert(node.id());
+      userFocus(node.id());
+    });
+</script>
 </body>
 </html>
