@@ -16,12 +16,11 @@
         }
     </style>
     <script src="static.js"></script>
-    <script src="app.js"></script>
 </head>
 <body style="background-color: #495057;">
 
 
-<div class="modal fade" id="purchaseModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="true">
+<div class="modal" id="purchaseModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -35,13 +34,13 @@
                 <p>These changes were propagated to Differential Dataflow to incrementally update the recommendation model.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-bs-target="#modelModal" data-bs-toggle="modal">Ok, show me the model changes next</button>
+                <button type="button" class="btn btn-primary" onclick="applyPurchaseChanges();">Apply</button>
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="modelModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
+<div class="modal" id="modelModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -64,13 +63,13 @@
                 </ul>
             </div>
             <div class="modal-footer">
-                <button type="button" onlick="alert('huhu');" class="btn btn-primary" data-bs-target="#recommendationModal" data-bs-toggle="modal">Ok, show me the recommendation changes</button>
+                <button type="button" class="btn btn-primary" onclick="applyModelChanges();">Apply</button>
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="recommendationModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
+<div class="modal" id="recommendationModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -98,13 +97,13 @@
                 </p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-primary"  data-bs-target="#influenceModal" data-bs-toggle="modal">Ok, show me the influence changes</button>
+                <button type="button" class="btn btn-primary" onclick="applyRecommendationChanges();">Apply</button>
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="influenceModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
+<div class="modal" id="influenceModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -147,8 +146,8 @@
             <div class="col-9">
                 <ul class="nav nav-pills danger" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <!--a onclick="javascript:APP.userFocus(9321066492);" class="nav-link" id="pills-sober-tab" data-bs-toggle="pill" data-bs-target="#pills-sober" type="button" role="tab" aria-controls="pills-sober" aria-selected="true">Getting sober</a-->
                         <a onclick="javascript:APP.userFocus(93210);" class="nav-link" id="pills-sober-tab" data-bs-toggle="pill" data-bs-target="#pills-sober" type="button" role="tab" aria-controls="pills-sober" aria-selected="true">Getting sober</a>
+                        <!--<a onclick="javascript:APP.userFocus(66492);" class="nav-link" id="pills-sober-tab" data-bs-toggle="pill" data-bs-target="#pills-sober" type="button" role="tab" aria-controls="pills-sober" aria-selected="true">Getting sober</a-->
                     </li>
                     <li class="nav-item" role="presentation">
                         <a class="nav-link" id="pills-veg-tab" data-bs-toggle="pill" data-bs-target="#pills-veg" type="button" role="tab" aria-controls="pills-veg" aria-selected="true">Going vegetarian</a>
@@ -161,9 +160,9 @@
         </div>
 
 
-    <div class="row align-items-start justify-content-start">
+    <div class="row align-items-start justify-content-start d-none" id="detailCards">
         <div class="col-3">
-            <div class="card">
+            <div class="card" id="purchasesCard" data-bs-placement="right" data-bs-content="none">
                 <div class="card-body">
                     <h5 class="card-title">Relational Purchase Database</h5>
                     <h6 class="card-subtitle mb-2 text-body-secondary" id="renderPurchasesStats">
@@ -176,7 +175,7 @@
             </div>
         </div>
         <div class="col-6">
-            <div class="card">
+            <div class="card" id="modelCard" data-bs-placement="top" data-bs-content="none">
                 <div class="card-body">
                     <h5 class="card-title">Recommendation Model as Materialised View</h5>
                     <h6 class="card-subtitle mb-2 text-body-secondary">TBD</h6>
@@ -223,7 +222,7 @@
         </div>
         <div class="col">
             <div class="card">
-                <div class="card-body">
+                <div class="card-body" id="recommendationsCard" data-bs-placement="left" data-bs-content="none">
                     <h5 class="card-title">Next-Basket Recommendations</h5>
                     <h6 class="card-subtitle mb-2 text-body-secondary" id="renderRecommendationStats"><!-- Recommendation stats are rendered here --></h6>
                     <p class="card-text">
@@ -240,14 +239,82 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 <script>
 
-    const APP = new App();
+const PURCHASE_MODAL = new bootstrap.Modal('#purchaseModal', {});
+const MODEL_MODAL = new bootstrap.Modal('#modelModal', {});
+const RECOMMENDATION_MODAL = new bootstrap.Modal('#recommendationModal', {});
+const INFLUENCE_MODAL = new bootstrap.Modal('#influenceModal', {});
+
+const PURCHASE_POPOVER = new bootstrap.Popover(document.getElementById('purchasesCard'), { html: true, sanitize: false });
+
+PURCHASE_POPOVER.setContent({
+  '.popover-header': 'Changes',
+  '.popover-body': `<p>Purchases adjusted</p> <button onclick="switchToModelChanges();" type="button" class="btn btn-primary">OK</button>`,
+});
+
+PURCHASE_POPOVER.disable();
 
 
-    function unlearn(itemId) {
-        alert(APP.state.currentUserId);
-        const purchaseModal = new bootstrap.Modal('#purchaseModal', {});
-        purchaseModal.show();
-    }
+const MODEL_POPOVER = new bootstrap.Popover(document.getElementById('modelCard'), { html: true, sanitize: false });
+
+MODEL_POPOVER.setContent({
+  '.popover-header': 'Changes',
+  '.popover-body': `<p>Model adjusted</p> <button onclick="switchToRecommendationChanges();" type="button" class="btn btn-primary">OK</button>`,
+});
+
+MODEL_POPOVER.disable();
+
+const RECOMMENDATIONS_POPOVER = new bootstrap.Popover(document.getElementById('recommendationsCard'), { html: true, sanitize: false });
+
+RECOMMENDATIONS_POPOVER.setContent({
+  '.popover-header': 'Changes',
+  '.popover-body': `<p>Recommendations adjusted</p> <button onclick="switchToInfluenceChanges();" type="button" class="btn btn-primary">OK</button>`,
+});
+
+RECOMMENDATIONS_POPOVER.disable();
+</script>
+<script src="app.js"></script>
+<script>
+
+const APP = new App();
+
+function applyPurchaseChanges() {
+    PURCHASE_MODAL.hide();
+    APP.requestPurchases();
+    PURCHASE_POPOVER.enable();
+    PURCHASE_POPOVER.show();
+}
+
+function switchToModelChanges() {
+    PURCHASE_POPOVER.hide();
+    PURCHASE_POPOVER.disable();
+    MODEL_MODAL.show();
+}
+
+function applyModelChanges() {
+    MODEL_MODAL.hide();
+    APP.requestModelState();
+    MODEL_POPOVER.enable();
+    MODEL_POPOVER.show();
+}
+
+function switchToRecommendationChanges() {
+    MODEL_POPOVER.hide();
+    MODEL_POPOVER.disable();
+    RECOMMENDATION_MODAL.show();
+}
+
+function applyRecommendationChanges() {
+    RECOMMENDATION_MODAL.hide();
+    APP.requestRecommendations();
+    RECOMMENDATIONS_POPOVER.enable();
+    RECOMMENDATIONS_POPOVER.show();
+}
+
+function switchToInfluenceChanges() {
+    RECOMMENDATIONS_POPOVER.hide();
+    RECOMMENDATIONS_POPOVER.disable();
+    INFLUENCE_MODAL.show();
+}
 </script>
 <script src="rendering.js"></script>
 </body>

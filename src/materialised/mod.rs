@@ -384,8 +384,6 @@ impl TifuView {
             })
             .collect();
 
-
-
         let topk_index_update_start = Instant::now();
         let (count_nochange, count_update, count_recompute) = self.update_topk_index();
         let topk_index_update_duration = topk_index_update_start.elapsed().as_millis();
