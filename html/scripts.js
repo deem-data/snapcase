@@ -165,32 +165,71 @@ socket.onmessage = function (event) {
             .map(basketId => '(' + basketId + ', ' + itemId + ')')
             .join(", ");
 
-        const embedding_changes = response["payload"]["embedding_difference"]
+        const embeddingChanges = response["payload"]["embedding_difference"]
             .map(itemAndWeight => '(' + PRODUCTS[itemAndWeight[0]] + ', ' + itemAndWeight[1].toFixed(4) + ')')
             .join(", ");
 
+        const recommendationChanges = response["payload"]["recommendation_difference"]
+            .map(itemAndWeight => '(' + PRODUCTS[itemAndWeight[0]] + ', ' + itemAndWeight[1].toFixed(4) + ', ' + itemAndWeight[2] + ')')
+            .join(", ");
+
+        const topAisleChanges = response["payload"]["top_aisle_difference"]
+            .map(itemAndWeight => '(' + PRODUCTS[itemAndWeight[0]] + ', ' + itemAndWeight[1].toFixed(4) + ', ' + itemAndWeight[2] + ')')
+            .join(", ");
+
+        const adjacentChanges = response["payload"]["adjacent_difference"]
+            .map(itemAndWeight => '(' + itemAndWeight[0] + ', ' + itemAndWeight[1].toFixed(4) + ', ' + itemAndWeight[2] + ')')
+            .join(", ");
+
+        const incidentChanges = response["payload"]["incident_difference"]
+            .map(itemAndWeight => '(' + itemAndWeight[0] + ', ' + itemAndWeight[1].toFixed(4) + ', ' + itemAndWeight[2] + ')')
+            .join(", ");
 
         const update = `
-          <h2>Unlearning successful!</h2>
-
-          Deleted purchases for user ${response["payload"]["user_id"]} in ${databaseUpdate} ms with the following query:
-
-          <pre>
-          ${query}
-          </pre>
-
-          Deleted tuples: ${databaseDeletions}
-
+          <h2>What changed in the database?</h2>
           <p>
-          <h3>Updated the materialised recommendation model via incremental view maintenance:</h3>
-          <ul>
-           <li>Update of the user embedding took ${embeddingUpdate} ms.</li>
-           <li>Embedding changes: ${embedding_changes}</li>
-           <li>Update of the top-k index took ${indexUpdate} ms</li>
-           <li>Maintenance of the top-k index involved inspection of the entries for ${response["payload"]["num_inspected_neighbors"]} users and
-             updates for the entries of ${response["payload"]["num_updated_neighbors"]} users.</li>
-           </ul>
-           </p>
+            Deleted purchases for user ${response["payload"]["user_id"]} in ${databaseUpdate} ms with the following query:
+
+            <pre>
+                ${query}
+            </pre>
+
+            Deleted tuples: ${databaseDeletions}
+          </p>
+
+
+          <h2>What changed in the materialised recommendation model?</h2>
+            <h4>Sparse user embedding</h4>
+            <p>
+                <ul>
+                    <li>Update of the user embedding took ${embeddingUpdate} ms.</li>
+                    <li>Embedding changes: ${embeddingChanges}</li>
+                </ul>
+            </p>
+            <h4>Top-k neighborhood graph</h4>
+            <p>
+                <ul>
+                    <li>Update of the top-k index took ${indexUpdate} ms</li>
+                    <li>Maintenance of the top-k index involved inspection of the entries for ${response["payload"]["num_inspected_neighbors"]} users and
+                     updates for the entries of ${response["payload"]["num_updated_neighbors"]} users.</li>
+                </ul>
+            </p>
+
+
+          <h2>What changed in the recommendations for the user?</h2>
+            <p>
+                <ul>
+                    <li>Recommendation changes: ${recommendationChanges}</li>
+                </ul>
+            </p>
+
+          <h2>What changed in how this user influences the recommendations of other users?</h2>
+            <p>
+                <ul>
+                    <li>TODO COUNT CHANGES</li>
+                    <li>Top aisle changes: ${topAisleChanges}</li>
+                </ul>
+            </p>
         `;
         showCustomAlert(update);
     }

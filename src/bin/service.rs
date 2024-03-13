@@ -19,7 +19,7 @@ use timely::worker::Config;
 
 use timely::communication::allocator::thread::Thread;
 
-use snapcase::web::messaging::Requests;
+use snapcase::web::types::Requests;
 use snapcase::demo::database::PurchaseDatabase;
 use snapcase::tifuknn::hyperparams::PARAMS_INSTACART;
 
@@ -85,29 +85,35 @@ impl Handler for Server {
 
         match parsed_request {
             Ok(request) => {
-
-                println!("Received request: {:?}", request);
+                eprintln!("Received request: {:?}", request);
 
                 match request {
-                    Requests::UserFocus(user_focus_request) => {
-                        let user_id = user_focus_request.user_id;
-                        let purchases = self.database.borrow().purchases(user_id);
+                    Requests::Purchases(purchase_request) => {
+                        let purchases = self.database.borrow().purchases(purchase_request.user_id);
                         self.broadcast_json(json!({"response_type": "purchases",
                             "payload": purchases}));
+                    },
 
+                    Requests::ModelState(model_state_request) => {
+
+                        let user_id = model_state_request.user_id;
                         let tifu_view = self.tifu_view.borrow();
 
                         let embedding = tifu_view.user_embedding(user_id);
-                        self.broadcast_json(json!({"response_type": "embedding",
-                            "payload": embedding}));
+                        let ego_network = tifu_view.ego_network(206210, user_id);
+                        self.broadcast_json(json!({"response_type": "model_state",
+                            "payload": {
+                                "embedding": embedding,
+                                "ego_network": ego_network,
+                            }}));
+                    },
 
-                        let recommendations = tifu_view.recommendations_for(user_id, 0.1);
+                    Requests::Recommendations(recommendations_request) => {
+                        // TODO should alpha be a parameter?
+                        let recommendations = self.tifu_view.borrow()
+                            .recommendations_for(recommendations_request.user_id, 0.1);
                         self.broadcast_json(json!({"response_type": "recommendations",
                             "payload": recommendations}));
-
-                        let neighbors = tifu_view.neighborhood(user_id);
-                        self.broadcast_json(json!({"response_type": "neighbors",
-                            "payload": neighbors}));
                     },
 
                     Requests::PurchaseDeletion(purchase_deletion) => {
@@ -129,7 +135,7 @@ impl Handler for Server {
     fn on_request(&mut self, req: &Request) -> Result<Response> {
         match req.resource() {
             "/ws" => Response::from_request(req),
-            "/" => Ok(Response::new(200, "OK", read_local("html/index.html").unwrap())),
+            "/" => Ok(Response::new(200, "OK", read_local("html/snapcase.html").unwrap())),
             path if path.ends_with(".html") || path.ends_with(".png") || path.ends_with(".css") || path.ends_with(".js") => {
                 // TODO we should return the correct content type too here...
                 serve_or_404(&format!("html{}", path))

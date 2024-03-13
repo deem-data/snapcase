@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Snapcase - Low-latency machine unlearning</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <style>
+        .nav-pills > li > a {
+            color: #dee2e6 !important;
+        }
+
+        .nav-pills > li > a.active {
+            background-color: #dc3545 !important;
+        }
+    </style>
+    <script src="static.js"></script>
+    <script src="app.js"></script>
+</head>
+<body style="background-color: #495057;">
+
+
+<div class="modal fade" id="purchaseModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">Database Updates</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="purchaseModalDetails"></p>
+                <pre id="purchaseModalQuery">
+                </pre>
+                <p>These changes were propagated to Differential Dataflow to incrementally update the recommendation model.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-target="#modelModal" data-bs-toggle="modal">Ok, show me the model changes next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modelModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">Model Maintenance</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Sparse user embedding</h6>
+                <ul>
+                    <li id="modelModalEmbeddingStats"></li>
+                    <li>Embedding changes:
+                        <ul class="list-group" id="modelModalEmbeddingChanges">
+                        </ul>
+                    </li>
+                </ul>
+
+                <h6>Top-k neighborhood graph</h6>
+                <ul id="modelModelIndexUpdateStats">
+
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" onlick="alert('huhu');" class="btn btn-primary" data-bs-target="#recommendationModal" data-bs-toggle="modal">Ok, show me the recommendation changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="recommendationModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">Recommendation Maintenance</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>
+                    <h6>Dropped from Recommendations</h6>
+                    <ul class="list-group" id="recommendationChangesDeletes">
+                        <!-- Recommendation deletes are rendered here -->
+                    </ul>
+                </p>
+                <p>
+                <h6>New in Recommendations</h6>
+                    <ul class="list-group" id="recommendationChangesInserts">
+                        <!-- Recommendation inserts are rendered here -->
+                    </ul>
+                </p>
+                <p>
+                <h6>Updates in Recommendations</h6>
+                <ul class="list-group" id="recommendationChangesUpdates">
+                    <!-- Recommendation updates are rendered here -->
+                </ul>
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary"  data-bs-target="#influenceModal" data-bs-toggle="modal">Ok, show me the influence changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="influenceModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="staticBackdropLabel" aria-hidden="false">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5">Influence Changes</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>
+                <h6>Dropped Categories</h6>
+                <ul class="list-group" id="influenceChangesDeletes">
+                    <!-- Top category deletes are rendered here -->
+                </ul>
+                </p>
+                <p>
+                <h6>New Categories</h6>
+                <ul class="list-group" id="influenceChangesInserts">
+                    <!-- Top category inserts are rendered here -->
+                </ul>
+                </p>
+                <p>
+                <h6>Updates in Categories</h6>
+                <ul class="list-group" id="influenceChangesUpdates">
+                    <!-- Top category updates are rendered here -->
+                </ul>
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div class="container">
+        <div class="row align-items-start justify-content-start py-3">
+            <div class="col-3">
+                <h2>Unlearning Scenarios</h2>
+            </div>
+            <div class="col-9">
+                <ul class="nav nav-pills danger" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <!--a onclick="javascript:APP.userFocus(9321066492);" class="nav-link" id="pills-sober-tab" data-bs-toggle="pill" data-bs-target="#pills-sober" type="button" role="tab" aria-controls="pills-sober" aria-selected="true">Getting sober</a-->
+                        <a onclick="javascript:APP.userFocus(93210);" class="nav-link" id="pills-sober-tab" data-bs-toggle="pill" data-bs-target="#pills-sober" type="button" role="tab" aria-controls="pills-sober" aria-selected="true">Getting sober</a>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link" id="pills-veg-tab" data-bs-toggle="pill" data-bs-target="#pills-veg" type="button" role="tab" aria-controls="pills-veg" aria-selected="true">Going vegetarian</a>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <a class="nav-link" id="pills-healthy-tab" data-bs-toggle="pill" data-bs-target="#pills-healthy" type="button" role="tab" aria-controls="pills-healthy" aria-selected="true">Eating more healthy</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+
+    <div class="row align-items-start justify-content-start">
+        <div class="col-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Relational Purchase Database</h5>
+                    <h6 class="card-subtitle mb-2 text-body-secondary" id="renderPurchasesStats">
+                        <!-- Purchase stats will be rendered here-->
+                    </h6>
+                    <p class="card-text" id="renderPurchases">
+                        <!-- Purchases will be rendered here-->
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Recommendation Model as Materialised View</h5>
+                    <h6 class="card-subtitle mb-2 text-body-secondary">TBD</h6>
+                    <p class="card-text">
+
+                    <div class="card-body">
+                        <h5 class="card-title">Sparse User Embedding</h5>
+                        <p class="card-text">
+
+                            <button id="sparseUserEmbeddingButton" class="btn btn-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#sparseUserEmbedding" aria-expanded="false" aria-controls="sparseUserEmbedding">
+
+                            </button>
+
+                            <ul class="list-group collapse" id="sparseUserEmbedding">
+                                <!-- Embedding rendered here-->
+                            </ul>
+                        </p>
+                    </div>
+
+                    <div class="card-body">
+                        <h5 class="card-title">Ego Network in the Top-k Neighbors Graph</h5>
+                        <h6 class="card-subtitle mb-2 text-body-secondary" id="renderEgoNetworkStats">TBD</h6>
+                        <p class="card-text">
+                        <div id="cy" style="width: 100%; height: 500px;">
+                            <!-- Ego network rendered here-->
+                        </div>
+                        </p>
+                    </div>
+
+                    <div class="card-body">
+                        <h5 class="card-title">Product Category Distribution with Influenced Users</h5>
+                        <h6 class="card-subtitle mb-2 text-body-secondary">Top-10 product categories in the ego network</h6>
+                        <p class="card-text">
+                        <ul class="list-group" id="renderTopAisles">
+                            <!-- Top aisles are rendered here -->
+                        </ul>
+                        </p>
+                    </div>
+
+
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Next-Basket Recommendations</h5>
+                    <h6 class="card-subtitle mb-2 text-body-secondary" id="renderRecommendationStats"><!-- Recommendation stats are rendered here --></h6>
+                    <p class="card-text">
+                        <ul class="list-group" id="renderRecommendations">
+                            <!-- Recommendations are rendered here -->
+                        </ul>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+<script>
+
+    const APP = new App();
+
+
+    function unlearn(itemId) {
+        alert(APP.state.currentUserId);
+        const purchaseModal = new bootstrap.Modal('#purchaseModal', {});
+        purchaseModal.show();
+    }
+</script>
+<script src="rendering.js"></script>
+</body>
+</html>

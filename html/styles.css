@@ -4,6 +4,7 @@
     top: 40%;
     left: 40%;
     transform: translate(-40%, -40%);
+    overflow-y: scroll;
     padding: 20px;
     background-color: #fff;
     border: 1px solid #ccc;

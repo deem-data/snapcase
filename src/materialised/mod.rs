@@ -12,7 +12,7 @@ use timely::communication::allocator::thread::Thread;
 use timely::dataflow::operators::Probe;
 use timely::dataflow::operators::probe::Handle;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 use differential_dataflow::trace::{Cursor, TraceReader};
 use crate::caboose::sparse_topk_index::SparseTopKIndex;
@@ -25,6 +25,8 @@ use crate::tifuknn::types::{DiscretisedItemVector, HyperParams};
 use crate::tifuknn::types::DISCRETISATION_FACTOR;
 
 use sprs::SpIndex;
+use crate::materialised::types::{Change, EgoNetwork};
+use crate::materialised::types::Change::{Insert, Delete, Update};
 
 use crate::materialised::types::{DeletionImpact, Neighborhood, UserEmbedding};
 
@@ -145,6 +147,66 @@ impl TifuView {
         }
     }
 
+    pub fn ego_network(&self, num_users: usize, user_id: usize) -> EgoNetwork {
+
+        let mut vertex_ids = HashSet::new();
+        vertex_ids.insert(user_id);
+
+        self.in_neighbors_of(num_users, user_id).iter().for_each(|(other_user, _)| {
+            vertex_ids.insert(*other_user);
+        });
+
+        let mut edges: Vec<(usize,usize)> = Vec::new();
+        for other_user_id in &vertex_ids {
+            for row in self.topk_index.neighbors(*other_user_id) {
+                if vertex_ids.contains(&(row.row as usize)) {
+                    edges.push((*other_user_id, row.row as usize));
+                }
+            }
+        }
+
+        let vertices: Vec<usize> = vertex_ids.into_iter().collect();
+
+        let mut vertices_with_sensitive_items: Vec<usize> = Vec::new();
+        let user_ids = vertices.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+
+        self.database.borrow().from_query(&format!(r#"
+            SELECT    DISTINCT o.user_id
+              FROM    products p
+              JOIN    order_products op
+                ON    p.product_id = op.product_id
+              JOIN    orders o
+                ON    o.order_id = op.order_id
+             WHERE    p.aisle_id IN (27, 28, 62, 124, 134)
+               AND    o.user_id IN ({});
+            "#, user_ids),
+            |row| {
+                vertices_with_sensitive_items.push(row.get(0).unwrap());
+            }
+        );
+
+        let mut top_aisles = Vec::new();
+        self.database.borrow().from_query(&format!(r#"
+            SELECT    p.aisle_id, COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS normalized_count
+              FROM    products p
+              JOIN    order_products op
+                ON    p.product_id = op.product_id
+              JOIN    orders o
+                ON    o.order_id = op.order_id
+             WHERE    o.user_id IN ({})
+            GROUP BY  p.aisle_id
+            ORDER BY  normalized_count DESC
+            LIMIT 10;
+            "#, user_ids),
+            |row| {
+              let aisle_id: usize = row.get(0).unwrap();
+              let percentage: f64 = row.get(1).unwrap();
+              top_aisles.push((aisle_id, percentage))
+            });
+
+        EgoNetwork { vertices, edges, vertices_with_sensitive_items, top_aisles }
+    }
+
     pub fn neighborhood(&self, user_id: usize) -> Neighborhood {
 
         let adjacent = self.neighbors_of(user_id);
@@ -173,29 +235,27 @@ impl TifuView {
             "#, all_neighbor_ids),
             |row| {
                 let aisle_id: usize = row.get(0).unwrap();
-                let percentage: f32 = row.get(1).unwrap();
+                let percentage: f64 = row.get(1).unwrap();
                 top_aisles.push((aisle_id, percentage))
             });
-
-
 
         Neighborhood { user_id, adjacent, incident, top_aisles }
     }
 
-    fn neighbors_of(&self, user_id: usize) -> Vec<(usize, f32)> {
+    fn neighbors_of(&self, user_id: usize) -> Vec<(usize, f64)> {
         self.topk_index.neighbors(user_id)
-            .map(|row| (row.row as usize, row.similarity))
+            .map(|row| (row.row as usize, row.similarity as f64))
             .collect()
     }
 
-    fn in_neighbors_of(&self, num_users: usize, user_id: usize) -> Vec<(usize, f32)> {
+    fn in_neighbors_of(&self, num_users: usize, user_id: usize) -> Vec<(usize, f64)> {
 
         let mut incident_to = Vec::new();
 
         for other_user_id in 0..num_users {
             for row in self.topk_index.neighbors(other_user_id) {
                 if row.row as usize == user_id {
-                    incident_to.push((other_user_id, row.similarity));
+                    incident_to.push((other_user_id, row.similarity as f64));
                 }
             }
         }
@@ -269,6 +329,9 @@ impl TifuView {
         let database_update_duration = database_update_start.elapsed().as_millis();
 
         let old_embedding = self.user_embeddings.get(&user_id).unwrap().clone();
+        //TODO don't hardcode this here
+        let old_recommendations = self.recommendations_for(user_id, 0.1).clone();
+        let old_neighborhood = self.neighborhood(user_id).clone();
 
         let embedding_update_start = Instant::now();
         // Scoping needed for mutable borrows
@@ -327,12 +390,33 @@ impl TifuView {
         let (count_nochange, count_update, count_recompute) = self.update_topk_index();
         let topk_index_update_duration = topk_index_update_start.elapsed().as_millis();
 
+
+        //TODO don't hardcode this here
+        let updated_recommendations = self.recommendations_for(user_id, 0.1);
+        let recommendation_difference =
+            compute_differences(&old_recommendations, &updated_recommendations);
+
+        let updated_neighborhood = self.neighborhood(user_id);
+
+        let top_aisle_difference =
+            compute_differences(&old_neighborhood.top_aisles, &updated_neighborhood.top_aisles);
+
+        let incident_difference =
+            compute_differences(&old_neighborhood.incident, &updated_neighborhood.incident);
+
+        let adjacent_difference =
+            compute_differences(&old_neighborhood.adjacent, &updated_neighborhood.adjacent);
+
         DeletionImpact {
             user_id,
             item_id,
             deletion_query,
             basket_ids,
             embedding_difference,
+            recommendation_difference,
+            adjacent_difference,
+            incident_difference,
+            top_aisle_difference,
             database_update_duration,
             embedding_update_duration,
             topk_index_update_duration,
@@ -394,6 +478,40 @@ impl TifuView {
         }
         num_changed_embeddings
     }
+}
+
+fn compute_differences(
+    old_v: &Vec<(usize, f64)>,
+    updated_v: &Vec<(usize, f64)>
+) -> Vec<(usize, f64, Change)> {
+
+    let old: HashMap<usize, f64> = old_v.into_iter().map(|(k, v)| (*k, *v)).collect();
+    let updated: HashMap<usize, f64> = updated_v.into_iter().map(|(k, v)| (*k, *v)).collect();
+
+    let mut differences = Vec::new();
+
+    for (key, old_value) in old.iter() {
+        match updated.get(key) {
+            Some(updated_value) => {
+                let diff = *updated_value - *old_value;
+                if diff != 0.0 {
+                    differences.push((*key, diff, Update));
+                }
+            }
+            None => {
+                differences.push((*key, -*old_value, Delete));
+            }
+        }
+    }
+
+    for (key, updated_value) in updated.iter() {
+        if !old.contains_key(key) {
+            // TODO no idea why the compiler complains here without the full path
+            differences.push((*key, *updated_value, Insert));
+        }
+    }
+
+    differences
 }
 
 
