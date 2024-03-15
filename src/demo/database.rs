@@ -26,14 +26,14 @@ pub struct ItemPurchase {
 impl PurchaseDatabase {
     pub fn new() -> Self {
         let duckdb = Connection::open_in_memory().unwrap();
-
+        eprintln!("[DuckDB] Importing purchase database for 206,209 users, 49,685 items and 33,819,106 purchases...");
         for table in ["aisles", "departments", "order_products", "orders", "products"] {
             let import_query = format!(r#"
                 CREATE TABLE {table} AS
                 SELECT * FROM read_parquet('datasets/instacart/{table}.parquet');
             "#);
             duckdb.execute(&import_query, []).unwrap();
-            eprintln!("Imported table {table}");
+            eprintln!("[DuckDB] \tImported table {table}.");
         }
         Self { duckdb }
     }

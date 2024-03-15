@@ -44,7 +44,6 @@ class App {
     }
 
     userFocus(userId) {
-        showCards();
 
         this.state.currentUserId = userId;
         this.requestPurchases();

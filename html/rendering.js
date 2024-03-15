@@ -1,34 +1,5 @@
 
-var CY = cytoscape({
-  container: document.getElementById('cy'),
-  elements: [],
-  style: [
-    {
-      selector: 'node',
-      style: {
-        'background-color': 'data(color)',
-        'label': 'data(id)',
-      }
-    },
-    {
-      selector: 'edge',
-      style: {
-        'width': 3,
-        'line-color': 'data(color)',
-        'target-arrow-color': 'data(color)',
-        'target-arrow-shape': 'triangle',
-        'curve-style': 'bezier'
-      }
-    }
-  ]
-});
-
-CY.on('tap', 'node', function(evt){
-  var node = evt.target;
-  const userId = parseInt(node.id());
-  alert(userId);
-  APP.userFocus(userId);
-});
+var CY = undefined;
 
 function showCards() {
     document.querySelector("#detailCards").classList.remove("d-none");
@@ -66,6 +37,39 @@ function renderRecommendations(recommendations) {
 }
 
 function renderEgoNetwork(egoNetwork) {
+
+    showCards();
+
+    CY = cytoscape({
+      container: document.getElementById('cy'),
+      elements: [],
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'background-color': 'data(color)',
+            'label': 'data(id)',
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': 3,
+            'line-color': 'data(color)',
+            'target-arrow-color': 'data(color)',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier'
+          }
+        }
+      ]
+    });
+
+    CY.on('tap', 'node', function(evt){
+      var node = evt.target;
+      const userId = parseInt(node.id());
+      APP.userFocus(userId);
+    });
+
     withSensitive = egoNetwork["vertices_with_sensitive_items"];
     const cyVertices = egoNetwork["vertices"]
         .map(v => {
@@ -145,18 +149,19 @@ function renderEmbedding(embedding) {
 
         if (APP.state.isSensitive(itemId)) {
             embeddingsWeights += `
-                <li class="list-group-item text-danger">
-                    ${itemId}: ${weight.toFixed(5)} (${STATICS.products[itemId]})
-                </li>`;
+                <tr>
+                    <td class="text-danger">${itemId}</td><td class="text-danger">${weight.toFixed(5)}</td><td class="text-danger">${STATICS.products[itemId]}</td>
+                </tr>`;
         } else {
             embeddingsWeights += `
-                <li class="list-group-item">
-                    ${itemId}: ${weight.toFixed(5)} (${STATICS.products[itemId]})
-                </li>`;
+                <tr>
+                    <td>${itemId}</td><td>${weight.toFixed(5)}</td><td>${STATICS.products[itemId]}</td>
+                </tr>`;
         }
     }
-    document.getElementById('sparseUserEmbedding').innerHTML = embeddingsWeights;
-    document.getElementById('sparseUserEmbeddingButton').innerHTML = `Show details (${embedding.length} items and weights)`;
+
+    document.getElementById('sparseUserEmbeddingEntries').innerHTML = embeddingsWeights;
+    document.getElementById('sparseUserEmbeddingButton').innerHTML = `Details (${embedding.length} items and weights)`;
 }
 
 function renderPurchases(itemPurchases) {
@@ -212,34 +217,64 @@ function renderPurchases(itemPurchases) {
     document.getElementById("renderPurchasesStats").innerHTML = `${distinctBaskets.size} baskets with ${distinctItems.size} distinct items`;
 }
 
+function reformatMultilineString(multilineString) {
+    const lines = multilineString.split('\n');
+    const reformattedLines = [];
+
+    lines.forEach(line => {
+        const words = line.split(' ');
+        let currentLine = '';
+
+        words.forEach(word => {
+            if ((currentLine + word).length > 50) {
+                reformattedLines.push(currentLine.trim());
+                currentLine = '';
+            }
+            currentLine += (currentLine ? ' ' : '') + word;
+        });
+
+        if (currentLine.trim()) {
+            reformattedLines.push(currentLine.trim());
+        }
+    });
+
+    return reformattedLines.join('\n');
+}
+
 function renderUnlearningChanges(deletionImpact) {
 
     document.getElementById('purchaseModalDetails').innerHTML = `
         Deleted ${deletionImpact['basket_ids'].length} tuples from the purchase database within ${deletionImpact['database_update_duration']}ms via the following query:
         `;
 
-    document.getElementById('purchaseModalQuery').innerHTML = deletionImpact['deletion_query'];
+    var query = deletionImpact['deletion_query'];
+    query = query.replace('            ', '');
+    query = reformatMultilineString(query);
+
+    document.getElementById('purchaseModalQuery').innerHTML = query;
 
     PURCHASE_MODAL.show();
 
-    document.getElementById('modelModalEmbeddingStats').innerHTML = `Update of the user embedding took ${deletionImpact['embedding_update_duration']} ms`;
+    document.getElementById('modelModalEmbeddingStats').innerHTML = `Update of the user embedding took ${deletionImpact['embedding_update_duration']} ms.`;
 
     var embeddingDifferences = '';
     for (var i in deletionImpact['embedding_difference']) {
         const itemId = deletionImpact['embedding_difference'][i][0];
         const change = deletionImpact['embedding_difference'][i][1];
 
+        const changeStr = change >= 0.0 ? '+' + change.toFixed(5) : change.toFixed(5);
+
         if (APP.state.isSensitive(itemId)) {
             embeddingDifferences += `
-                <li class="list-group-item text-danger">
-                ${itemId}: ${change} (${STATICS.products[itemId]})
-                </li>
+                <tr>
+                    <td class="text-danger">${itemId}</td><td class="text-danger">${changeStr}</td><td class="text-danger">${STATICS.products[itemId]}</td>
+                </tr>
             `;
         } else {
             embeddingDifferences += `
-                <li class="list-group-item">
-                ${itemId}: ${change} (${STATICS.products[itemId]})
-                </li>
+                <tr>
+                    <td>${itemId}</td><td>${changeStr}</td><td>${STATICS.products[itemId]}</td>
+                </tr>
             `;
         }
     }
@@ -273,14 +308,21 @@ function renderUnlearningChanges(deletionImpact) {
         }
     }
 
+    const num_changes_incident = num_deleted_incident + num_inserted_incident + num_updated_incident;
+
     var indexUpdateStats = `
-        <li>Update of the top-k index took ${deletionImpact['topk_index_update_duration']} ms</li>
-        <li>Maintenance of the top-k index involved inspection of the entries for ${deletionImpact['num_inspected_neighbors']} users and updates for the entries of ${deletionImpact['num_updated_neighbors']} users</li>
-        <li>Changes in the neighbors determining the recommendations for this user: ${num_deleted_adjacent} deletions, ${num_inserted_adjacent} insertions, ${num_updated_adjacent} weight updates</li>
-        <li>Changes in the neighbors whose recommendations are determined by this user: ${num_deleted_incident} deletions, ${num_inserted_incident} insertions, ${num_updated_incident} weight updates</li>
+        <tr><td style="width: 70%;">Update time</td><td style="width: 30%;">${deletionImpact['topk_index_update_duration']} ms</td></tr>
+        <tr><td>#Users with potential changes</td><td>${deletionImpact['num_inspected_neighbors']}</td></tr>
+        <tr><td>#Users with actual changes</td><td>${deletionImpact['num_updated_neighbors']}</td></tr>
+        <tr><td>#Deletions/insertions in top-k neighbors of current user</td><td>${num_deleted_adjacent}</td></tr>
+        <tr><td>#Weight updates in top-k neighbors of current user</td><td>${num_updated_adjacent}</td></tr>
+        <tr><td>#Other users with changes in in top-k neighbors</td><td>${num_changes_incident}</td></tr>
+        <tr><td>#Deletions of current user from other users' top-k neighbors</td><td>${num_deleted_incident}</td></tr>
+        <tr><td>#Inserts of current user into other users' top-k neighbors</td><td>${num_inserted_incident}</td></tr>
+        <tr><td>#Weight updates of current user in other users' top-k neighbors</td><td>${num_updated_incident}</td></tr>
     `;
 
-    document.getElementById('modelModelIndexUpdateStats').innerHTML = indexUpdateStats;
+    document.getElementById('modelModalIndexUpdateStats').innerHTML = indexUpdateStats;
 
 
     const arrowUp = `
@@ -311,16 +353,18 @@ function renderUnlearningChanges(deletionImpact) {
 
         if (APP.state.isSensitive(itemId)) {
             recommendationChanges[change] += `
-                <li class="list-group-item text-danger">
-                    <img src="images/aisles/${STATICS.aisleOfProduct[itemId]}.png" style="width: 25px; height: 25px;"/> ${STATICS.products[itemId]}
-                    ${arrow} ${renderedDiff}
-                </li>`;
+                <tr>
+                    <td class="text-danger" style="width: 8%;"><img src="images/aisles/${STATICS.aisleOfProduct[itemId]}.png" style="width: 25px; height: 25px;"/></td>
+                    <td class="text-danger" style="width: 72%;">${STATICS.products[itemId]}</td>
+                    <td class="text-danger" style="width: 20%;">${arrow} ${renderedDiff}</td>
+                </tr>`;
         } else {
             recommendationChanges[change] += `
-                <li class="list-group-item">
-                    <img src="images/aisles/${STATICS.aisleOfProduct[itemId]}.png" style="width: 25px; height: 25px;"/> ${STATICS.products[itemId]}
-                    ${arrow} ${renderedDiff}
-                </li>`;
+                <tr>
+                    <td style="width: 8%;"><img src="images/aisles/${STATICS.aisleOfProduct[itemId]}.png" style="width: 25px; height: 25px;"/></td>
+                    <td style="width: 72%;">${STATICS.products[itemId]}</td>
+                    <td style="width: 20%;">${arrow} ${renderedDiff}</td>
+                </tr>`;
         }
 
     }
@@ -347,16 +391,18 @@ function renderUnlearningChanges(deletionImpact) {
 
         if (APP.state.isSensitiveAisle(aisleId)) {
             influenceChanges[change] += `
-                <li class="list-group-item text-danger">
-                    <img src="images/aisles/${aisleId}.png" style="width: 25px; height: 25px;"/> ${aisleName}
-                    ${arrow} ${renderedDiff}
-                </li>`;
+                <tr>
+                    <td class="text-danger" style="width: 8%;"><img src="images/aisles/${aisleId}.png" style="width: 25px; height: 25px;"/></td>
+                    <td class="text-danger" style="width: 72%;">${aisleName}</td>
+                    <td class="text-danger" style="width: 20%;">${arrow} ${renderedDiff}</td>
+                </tr>`;
         } else {
             influenceChanges[change] += `
-                <li class="list-group-item">
-                    <img src="images/aisles/${aisleId}.png" style="width: 25px; height: 25px;"/> ${aisleName}
-                    ${arrow} ${renderedDiff}
-                </li>`;
+                <tr>
+                    <td style="width: 8%;"><img src="images/aisles/${aisleId}.png" style="width: 25px; height: 25px;"/></td>
+                    <td style="width: 72%;">${aisleName}</td>
+                    <td style="width: 20%;">${arrow} ${renderedDiff}</td>
+                </tr>`;
         }
     }
 

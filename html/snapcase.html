@@ -14,6 +14,15 @@
         .nav-pills > li > a.active {
             background-color: #dc3545 !important;
         }
+
+        .custom-popover {
+          --bs-popover-max-width: 200px;
+          --bs-popover-border-color: #031633;
+          --bs-popover-header-bg: #0d6efd;
+          --bs-popover-header-color: white;
+          --bs-popover-body-padding-x: 1rem;
+          --bs-popover-body-padding-y: .5rem;
+        }
     </style>
     <script src="static.js"></script>
 </head>
@@ -24,14 +33,13 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-5">Database Updates</h1>
+                <h1 class="modal-title fs-5">Database Differences</h1>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <p id="purchaseModalDetails"></p>
                 <pre id="purchaseModalQuery">
                 </pre>
-                <p>These changes were propagated to Differential Dataflow to incrementally update the recommendation model.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" onclick="applyPurchaseChanges();">Apply</button>
@@ -44,23 +52,30 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-5">Model Maintenance</h1>
+                <h1 class="modal-title fs-5">Model Differences</h1>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <h6>Sparse user embedding</h6>
-                <ul>
-                    <li id="modelModalEmbeddingStats"></li>
-                    <li>Embedding changes:
-                        <ul class="list-group" id="modelModalEmbeddingChanges">
-                        </ul>
-                    </li>
-                </ul>
-
-                <h6>Top-k neighborhood graph</h6>
-                <ul id="modelModelIndexUpdateStats">
-
-                </ul>
+                <h4>Sparse User Embedding</h4>
+                <p id="modelModalEmbeddingStats"></p>
+                <table class="table table-sm table-striped">
+                    <thead>
+                    <tr>
+                        <th scope="col" style="width: 20%;">Dimension</th>
+                        <th scope="col" style="width: 20%;">Change</th>
+                        <th scope="col" style="width: 60%;">Product</th>
+                    </tr>
+                    </thead>
+                    <tbody id="modelModalEmbeddingChanges">
+                    <!-- Embedding rendered here -->
+                    </tbody>
+                </table>
+                <h4>Top-k Neighborhood Graph</h4>
+                <table class="table table-sm table-striped">
+                    <tbody id="modelModalIndexUpdateStats">
+                    <!-- Embedding rendered here -->
+                    </tbody>
+                </table>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" onclick="applyModelChanges();">Apply</button>
@@ -73,27 +88,33 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-5">Recommendation Maintenance</h1>
+                <h1 class="modal-title fs-5">Recommendation Differences</h1>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <p>
-                    <h6>Dropped from Recommendations</h6>
-                    <ul class="list-group" id="recommendationChangesDeletes">
-                        <!-- Recommendation deletes are rendered here -->
-                    </ul>
+                    <h6><u>Dropped from Recommendations</u></h6>
+                    <table class="table table-sm table-striped">
+                        <tbody id="recommendationChangesDeletes">
+                            <!-- Recommendation deletes are rendered here -->
+                        </tbody>
+                    </table>
                 </p>
                 <p>
-                <h6>New in Recommendations</h6>
-                    <ul class="list-group" id="recommendationChangesInserts">
+                <h6><u>New in Recommendations</u></h6>
+                <table class="table table-sm table-striped">
+                    <tbody id="recommendationChangesInserts">
                         <!-- Recommendation inserts are rendered here -->
-                    </ul>
+                    </tbody>
+                </table>
                 </p>
                 <p>
-                <h6>Updates in Recommendations</h6>
-                <ul class="list-group" id="recommendationChangesUpdates">
-                    <!-- Recommendation updates are rendered here -->
-                </ul>
+                <h6><u>Updates in Recommendations</u></h6>
+                <table class="table table-sm table-striped">
+                    <tbody id="recommendationChangesUpdates">
+                        <!-- Recommendation updates are rendered here -->
+                    </tbody>
+                </table>
                 </p>
             </div>
             <div class="modal-footer">
@@ -107,27 +128,33 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h1 class="modal-title fs-5">Influence Changes</h1>
+                <h1 class="modal-title fs-5">Influence Differences in Top Categories</h1>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <p>
-                <h6>Dropped Categories</h6>
-                <ul class="list-group" id="influenceChangesDeletes">
-                    <!-- Top category deletes are rendered here -->
-                </ul>
+                <h6><u>Dropped Categories</u></h6>
+                <table class="table table-sm table-striped">
+                    <tbody id="influenceChangesDeletes">
+                        <!-- Top category deletes are rendered here -->
+                    </tbody>
+                </table>
                 </p>
                 <p>
-                <h6>New Categories</h6>
-                <ul class="list-group" id="influenceChangesInserts">
+                <h6><u>New Categories</u></h6>
+                <table class="table table-sm table-striped">
+                    <tbody id="influenceChangesInserts">
                     <!-- Top category inserts are rendered here -->
-                </ul>
+                    </tbody>
+                </table>
                 </p>
                 <p>
-                <h6>Updates in Categories</h6>
-                <ul class="list-group" id="influenceChangesUpdates">
+                <h6><u>Updates in Categories</u></h6>
+                <table class="table table-sm table-striped">
+                    <tbody id="influenceChangesUpdates">
                     <!-- Top category updates are rendered here -->
-                </ul>
+                    </tbody>
+                </table>
                 </p>
             </div>
             <div class="modal-footer">
@@ -146,15 +173,16 @@
             <div class="col-9">
                 <ul class="nav nav-pills danger" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <a onclick="javascript:APP.userFocus(93210);" class="nav-link" id="pills-sober-tab" data-bs-toggle="pill" data-bs-target="#pills-sober" type="button" role="tab" aria-controls="pills-sober" aria-selected="true">Getting sober</a>
+                        <a onclick="javascript:APP.userFocus(93210);" class="nav-link" id="pills-sober-tab" data-bs-toggle="pill" data-bs-target="#pills-sober" type="button" role="tab" aria-controls="pills-sober" aria-selected="true">Alcohol</a>
                         <!--<a onclick="javascript:APP.userFocus(66492);" class="nav-link" id="pills-sober-tab" data-bs-toggle="pill" data-bs-target="#pills-sober" type="button" role="tab" aria-controls="pills-sober" aria-selected="true">Getting sober</a-->
                     </li>
                     <li class="nav-item" role="presentation">
-                        <a class="nav-link" id="pills-veg-tab" data-bs-toggle="pill" data-bs-target="#pills-veg" type="button" role="tab" aria-controls="pills-veg" aria-selected="true">Going vegetarian</a>
+                        <a class="nav-link" id="pills-healthy-tab" data-bs-toggle="pill" data-bs-target="#pills-healthy" type="button" role="tab" aria-controls="pills-healthy" aria-selected="true">Obesity</a>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <a class="nav-link" id="pills-healthy-tab" data-bs-toggle="pill" data-bs-target="#pills-healthy" type="button" role="tab" aria-controls="pills-healthy" aria-selected="true">Eating more healthy</a>
+                        <a class="nav-link" id="pills-veg-tab" data-bs-toggle="pill" data-bs-target="#pills-veg" type="button" role="tab" aria-controls="pills-veg" aria-selected="true">Carbon footprint</a>
                     </li>
+
                 </ul>
             </div>
         </div>
@@ -162,7 +190,7 @@
 
     <div class="row align-items-start justify-content-start d-none" id="detailCards">
         <div class="col-3">
-            <div class="card" id="purchasesCard" data-bs-placement="right" data-bs-content="none">
+            <div class="card" id="purchasesCard" data-bs-placement="right" data-bs-content="none" data-bs-custom-class="custom-popover">
                 <div class="card-body">
                     <h5 class="card-title">Relational Purchase Database</h5>
                     <h6 class="card-subtitle mb-2 text-body-secondary" id="renderPurchasesStats">
@@ -175,10 +203,10 @@
             </div>
         </div>
         <div class="col-6">
-            <div class="card" id="modelCard" data-bs-placement="top" data-bs-content="none">
+            <div class="card" id="modelCard" data-bs-placement="top" data-bs-content="none" data-bs-custom-class="custom-popover">
                 <div class="card-body">
                     <h5 class="card-title">Recommendation Model as Materialised View</h5>
-                    <h6 class="card-subtitle mb-2 text-body-secondary">TBD</h6>
+                    <h6 class="card-subtitle mb-2 text-body-secondary">Incrementally maintained via Differential Dataflow</h6>
                     <p class="card-text">
 
                     <div class="card-body">
@@ -189,9 +217,18 @@
 
                             </button>
 
-                            <ul class="list-group collapse" id="sparseUserEmbedding">
-                                <!-- Embedding rendered here-->
-                            </ul>
+                            <table class="table table-striped collapse" id="sparseUserEmbedding">
+                                <thead>
+                                <tr>
+                                    <th scope="col">Dimension</th>
+                                    <th scope="col">Weight</th>
+                                    <th scope="col">Corresponding Product</th>
+                                </tr>
+                                </thead>
+                                <tbody id="sparseUserEmbeddingEntries">
+                                    <!-- Embedding rendered here -->
+                                </tbody>
+                            </table>
                         </p>
                     </div>
 
@@ -222,7 +259,7 @@
         </div>
         <div class="col">
             <div class="card">
-                <div class="card-body" id="recommendationsCard" data-bs-placement="left" data-bs-content="none">
+                <div class="card-body" id="recommendationsCard" data-bs-placement="left" data-bs-content="none" data-bs-custom-class="custom-popover">
                     <h5 class="card-title">Next-Basket Recommendations</h5>
                     <h6 class="card-subtitle mb-2 text-body-secondary" id="renderRecommendationStats"><!-- Recommendation stats are rendered here --></h6>
                     <p class="card-text">

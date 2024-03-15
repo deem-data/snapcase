@@ -76,7 +76,7 @@ impl TifuView {
                 (arranged_user_embeddings.trace, arranged_items_by_user.trace)
             });
 
-        eprintln!("Inserting purchase data...");
+        eprintln!("[Differential Dataflow] Inserting initial purchase data...");
         database.borrow().from_query(
             "SELECT order_id, user_id FROM orders;",
             |row| baskets_input.insert((row.get(0).unwrap(), row.get(1).unwrap()))
@@ -94,7 +94,7 @@ impl TifuView {
         baskets_input.flush();
         basket_items_input.flush();
 
-        eprintln!("Initial execution");
+        eprintln!("[Differential Dataflow] Computing initial model state...");
         worker.step_while(||
             user_embeddings_probe.less_than(baskets_input.time())
                 || user_embeddings_probe.less_than(basket_items_input.time())
@@ -104,7 +104,7 @@ impl TifuView {
 
         let num_changed = update_user_embeddings(1, &mut user_embeddings_trace,
                                                  &mut user_embeddings);
-        eprintln!("{:?} embeddings changed when moving to time 1", num_changed);
+        eprintln!("[Differential Dataflow] {:?} embeddings created", num_changed);
 
         let num_users = 206210;
         let num_items = 49689;
@@ -127,10 +127,11 @@ impl TifuView {
 
         let topk_index = crate::caboose::serialize::deserialize_from(num_users, num_items,
                                                                             "__instacart-index.bin");
-        eprintln!("Loaded precomputed index...");
-
+        eprintln!("[Caboose] Loaded precomputed top-index for 206,209 users with 10,310,450 entries");
         let baskets_input = Rc::new(RefCell::new(baskets_input));
         let basket_items_input = Rc::new(RefCell::new(basket_items_input));
+
+        eprintln!("System ready for model maintenance at: http://localhost:8080");
 
         Self {
             database,
