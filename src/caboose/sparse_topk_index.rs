@@ -56,10 +56,8 @@ impl SparseTopKIndex {
         rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
             .start_handler(move |id| {
-                //println!("Thread {} starting in pool", id);
                 if pin_threads {
                     let core_ids = core_affinity::get_core_ids().unwrap();
-                    //println!("Pinning thread {} to core {:?}", id, core_ids[id]);
                     core_affinity::set_for_current(core_ids[id]);
                 }
             })
@@ -544,8 +542,6 @@ impl SparseTopKIndex {
         let _durations = [parallel_similarity_duration, change_duration, change_apply_duration,
             recompute_duration];
 
-        //eprintln!("CABOOSE: inspected: {:?}, updated {:?}, recomputed {:?}",
-        //          count_nochange, count_update, count_recompute);
         (count_nochange, count_update, count_recompute)
     }
 }

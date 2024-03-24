@@ -26,7 +26,6 @@ pub fn group_vector(
     for (basket, multiplicity) in baskets_and_multiplicities {
 
         let index = index(*multiplicity, group_size) + correction_offset;
-        //println!("GROUP: {:?} {:?} {:?} - {:?}", r, group_size, index, basket.items);
         let decay = r.powi((&group_size - index) as i32);
         let contribution = decay / num_baskets_in_group;
 
@@ -56,8 +55,6 @@ pub fn user_vector(
         let m_minus_i = (&num_groups - index) as i32;
         let r_g_m_minus_i = r.powi(m_minus_i);
         let multiplier = r_g_m_minus_i / num_groups as f64;
-
-        //println!("USER: {:?} {:?} {:?} - {:?}", r, num_groups, index, group_vector);
 
         user_vector.plus_mult(multiplier, group_vector);
     }

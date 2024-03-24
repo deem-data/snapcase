@@ -1,5 +1,11 @@
 const STATICS = {
 
+    sensitiveCategories: {
+        'alcohol': [27, 28, 62, 124, 134],
+        'obesity': [37, 38, 45, 61, 77, 79, 106],
+        'carbon': [96, 106],
+    },
+
     weekDays: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
 
     aisleNames: {

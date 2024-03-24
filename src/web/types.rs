@@ -21,8 +21,16 @@ pub struct PurchasesRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub enum Scenario {
+    Alcohol,
+    Obesity,
+    Carbon
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ModelStateRequest {
     pub user_id: usize,
+    pub scenario: Scenario,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -54,7 +54,6 @@ pub fn user_vectors<G: Scope>(
     let group_vectors = baskets
         .reduce(move |_user, baskets_and_multiplicities, out| {
             for (basket, multiplicity) in baskets_and_multiplicities {
-                // TODO write a test for this...
                 let group = if *multiplicity % params.group_size == 0 {
                     *multiplicity / params.group_size
                 } else {
@@ -79,12 +78,10 @@ pub fn user_vectors<G: Scope>(
             out.push((group_vector, *group));
         })
         .map(|((user, _), group_vector)| (user, group_vector));
-    //.inspect(|x| println!("Group vector {:?}", x));
 
     let user_vectors = group_vectors
         .reduce(move |user, vectors_and_multiplicities, out| {
             let user_vector = user_vector(*user, vectors_and_multiplicities, params.r_group);
-            //println!("USER-{}-{}", user, user_vector.print());
             out.push((user_vector, 1))
         });
 

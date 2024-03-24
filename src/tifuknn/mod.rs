@@ -6,27 +6,18 @@ pub mod aggregation;
 pub mod dataflow;
 pub mod hyperparams;
 
-//use std::fmt::Display;
 use crate::tifuknn::types::{Basket, DiscretisedItemVector};
 use std::time::Instant;
 use std::collections::HashSet;
 
 use timely::worker::Worker;
 use timely::communication::Allocator;
-//use timely::dataflow::ProbeHandle;
-//use timely::progress::Timestamp;
-//use timely::progress::timestamp::Refines;
-//use timely::order::TotalOrder;
-//use timely::dataflow::operators::Probe;
 use timely::dataflow::operators::probe::Handle;
 
 use self::timely::progress::frontier::AntichainRef;
 
 use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
 use differential_dataflow::input::InputSession;
-//use differential_dataflow::lattice::Lattice;
-//use differential_dataflow::operators::arrange::ArrangeByKey;
-//use crate::tifuknn::types::HyperParams;
 // TODO this should be in higher-level module
 use crate::tifuknn::types::Trace;
 

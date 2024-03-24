@@ -308,15 +308,12 @@ function renderUnlearningChanges(deletionImpact) {
         }
     }
 
-    const num_changes_incident = num_deleted_incident + num_inserted_incident + num_updated_incident;
-
     var indexUpdateStats = `
         <tr><td style="width: 70%;">Update time</td><td style="width: 30%;">${deletionImpact['topk_index_update_duration']} ms</td></tr>
         <tr><td>#Users with potential changes</td><td>${deletionImpact['num_inspected_neighbors']}</td></tr>
         <tr><td>#Users with actual changes</td><td>${deletionImpact['num_updated_neighbors']}</td></tr>
         <tr><td>#Deletions/insertions in top-k neighbors of current user</td><td>${num_deleted_adjacent}</td></tr>
         <tr><td>#Weight updates in top-k neighbors of current user</td><td>${num_updated_adjacent}</td></tr>
-        <tr><td>#Other users with changes in in top-k neighbors</td><td>${num_changes_incident}</td></tr>
         <tr><td>#Deletions of current user from other users' top-k neighbors</td><td>${num_deleted_incident}</td></tr>
         <tr><td>#Inserts of current user into other users' top-k neighbors</td><td>${num_inserted_incident}</td></tr>
         <tr><td>#Weight updates of current user in other users' top-k neighbors</td><td>${num_updated_incident}</td></tr>

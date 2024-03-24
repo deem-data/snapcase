@@ -17,7 +17,7 @@ use std::time::Instant;
 use differential_dataflow::trace::{Cursor, TraceReader};
 use crate::caboose::sparse_topk_index::SparseTopKIndex;
 
-use crate::web::types::Trace;
+use crate::web::types::{Scenario, Trace};
 use crate::demo::database::PurchaseDatabase;
 use crate::tifuknn::dataflow::tifu_model;
 use crate::tifuknn::types::{DiscretisedItemVector, HyperParams};
@@ -148,7 +148,7 @@ impl TifuView {
         }
     }
 
-    pub fn ego_network(&self, num_users: usize, user_id: usize) -> EgoNetwork {
+    pub fn ego_network(&self, num_users: usize, user_id: usize, scenario: Scenario) -> EgoNetwork {
 
         let mut vertex_ids = HashSet::new();
         vertex_ids.insert(user_id);
@@ -171,6 +171,12 @@ impl TifuView {
         let mut vertices_with_sensitive_items: Vec<usize> = Vec::new();
         let user_ids = vertices.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
 
+        let sensitive_categories = match scenario {
+            Scenario::Alcohol => "27, 28, 62, 124, 134",
+            Scenario::Obesity => "37, 38, 45, 61, 77, 79, 106",
+            Scenario::Carbon => "96, 106",
+        };
+
         self.database.borrow().from_query(&format!(r#"
             SELECT    DISTINCT o.user_id
               FROM    products p
@@ -178,9 +184,9 @@ impl TifuView {
                 ON    p.product_id = op.product_id
               JOIN    orders o
                 ON    o.order_id = op.order_id
-             WHERE    p.aisle_id IN (27, 28, 62, 124, 134)
+             WHERE    p.aisle_id IN ({})
                AND    o.user_id IN ({});
-            "#, user_ids),
+            "#, sensitive_categories, user_ids),
             |row| {
                 vertices_with_sensitive_items.push(row.get(0).unwrap());
             }

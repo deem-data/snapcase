@@ -77,7 +77,6 @@ impl Handler for Server {
 
     fn on_message(&mut self, msg: Message) -> Result<()> {
 
-        // We assume we always get valid utf-8
         let message_as_string = &msg.into_text().unwrap();
 
         let parsed_request: SerdeResult<Requests> =
@@ -100,7 +99,12 @@ impl Handler for Server {
                         let tifu_view = self.tifu_view.borrow();
 
                         let embedding = tifu_view.user_embedding(user_id);
-                        let ego_network = tifu_view.ego_network(206210, user_id);
+                        let ego_network = tifu_view.ego_network(
+                            206210,
+                            user_id,
+                            model_state_request.scenario
+                        );
+
                         self.broadcast_json(json!({"response_type": "model_state",
                             "payload": {
                                 "embedding": embedding,
@@ -119,7 +123,9 @@ impl Handler for Server {
                     Requests::PurchaseDeletion(purchase_deletion) => {
                         eprintln!("Purchase deletion");
                         let deletion_impact = self.tifu_view.borrow_mut().forget_purchase(
-                            purchase_deletion.user_id, purchase_deletion.item_id);
+                            purchase_deletion.user_id,
+                            purchase_deletion.item_id,
+                        );
 
                         self.broadcast_json(json!({"response_type": "deletion_impact",
                             "payload": deletion_impact}));

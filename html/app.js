@@ -1,18 +1,18 @@
 
 class AppState {
-    constructor(sensitiveCategories) {
-        this.sensitiveCategories = sensitiveCategories;
+    constructor(scenario) {
+        this.scenario = scenario;
         this.inJourney = false;
         this.currentUserId = undefined;
     }
 
     isSensitive(itemId) {
         const category = STATICS.aisleOfProduct[itemId];
-        return this.sensitiveCategories.includes(category);
+        return STATICS.sensitiveCategories[this.scenario].includes(category);
     }
 
     isSensitiveAisle(aisleId) {
-        return this.sensitiveCategories.includes(aisleId);
+        return STATICS.sensitiveCategories[this.scenario].includes(aisleId);
     }
 }
 
@@ -20,7 +20,7 @@ class App {
 
     constructor() {
 
-        this.state = new AppState([27, 28, 62, 124, 134]);
+        this.state = new AppState([]);
         this.socket = new WebSocket("ws://localhost:8080/ws");
 
         this.socket.onmessage = function (event) {
@@ -39,12 +39,13 @@ class App {
         }
     }
 
-    startJourney() {
-        this.state.inJourney = True;
+
+    userFocusWithScenario(userId, scenario) {
+        this.state.scenario = scenario;
+        this.userFocus(userId);
     }
 
     userFocus(userId) {
-
         this.state.currentUserId = userId;
         this.requestPurchases();
         this.requestModelState();
@@ -56,7 +57,13 @@ class App {
     }
 
     requestModelState() {
-        this.socket.send(JSON.stringify({ "ModelState": { "user_id": this.state.currentUserId } }));
+
+        const scenario = this.state.scenario.charAt(0).toUpperCase() + this.state.scenario.slice(1);
+
+        this.socket.send(JSON.stringify({ "ModelState": {
+            "user_id": this.state.currentUserId,
+            "scenario": scenario,
+        } }));
     }
 
     requestRecommendations() {
@@ -64,6 +71,9 @@ class App {
     }
 
     unlearnPurchase(itemId) {
-        this.socket.send(JSON.stringify({ "PurchaseDeletion": { "user_id": this.state.currentUserId, "item_id": itemId } }));
+        this.socket.send(JSON.stringify({ "PurchaseDeletion": {
+            "user_id": this.state.currentUserId,
+            "item_id": itemId,
+        } }));
     }
 }
