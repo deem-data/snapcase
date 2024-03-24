@@ -2,6 +2,7 @@
 
 This repository contains the source code for our demo submission _"Snapcase - Regain Control over Your Predictions with Low-Latency Machine Unlearning"_ to VLDB'24.
 
+![Demonstration interface](demo.png)
 
 ## Running the demonstration yourself
 
@@ -13,6 +14,8 @@ must be placed directly in the `snapcase-demo` folder, and the `*.parquet` files
   5. You should see some console output from DuckDB and Differential Dataflow, after which the demo will be served at http://localhost:8080 , which you can open in a browser
 
 ## Inspecting the source code
+
+![System overview](system.png)
 
 We provide a few pointers for researchers interested in understanding the source code:
 
