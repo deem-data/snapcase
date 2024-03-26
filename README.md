@@ -22,3 +22,8 @@ We provide a few pointers for researchers interested in understanding the source
  * Our implementation of the [TIFU model for next-basket recommendation](https://arxiv.org/abs/2006.00556) in Differential Dataflow is available in the [src/tifuknn](src/tifuknn) folder.
  * Our data structure and algorithm for [efficiently maintaining a top-k aggregation over the result of a sparse matrix multiplication](https://dl.acm.org/doi/abs/10.1145/3539618.3591989) is available in the [src/caboose](src/caboose) folder.
  * The code to coordinate the incremental view maintenance of the recommendation model is available in the [src/materialised](src/materialised) subfolder.
+
+## Attribution
+
+This demonstration uses icons from the [Flaticon platform](https://www.flaticon.com/).
+
